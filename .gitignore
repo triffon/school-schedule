@@ -1,0 +1,5 @@
+# Service account keys and OAuth tokens — never commit
+credentials.json
+*-key.json
+token.json
+node_modules/
