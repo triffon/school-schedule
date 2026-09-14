@@ -3,3 +3,4 @@ credentials.json
 *-key.json
 token.json
 node_modules/
+dist/

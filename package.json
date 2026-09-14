@@ -1,0 +1,29 @@
+{
+  "name": "school-schedule",
+  "version": "0.0.0",
+  "description": "Publish a school's weekly Timetable to Google Calendar and Google Sheets",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "bin": {
+    "school-schedule": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
