@@ -1,5 +1,6 @@
 import { run } from "../../src/command.js";
 import type { Clock } from "../../src/ports/clock.js";
+import { SHARED_SKILL_LIBRARY } from "../../src/prompt/library.js";
 import { fixedClock } from "./fixed-clock.js";
 import { fakeCalendarClient, type FakeCalendarClient } from "./fake-calendar.js";
 import { fakeSheetsClient, type FakeSheetsClient } from "./fake-sheets.js";
@@ -17,6 +18,8 @@ export interface RunCliOptions {
   calendar?: FakeCalendarClient;
   sheets?: FakeSheetsClient;
   clock?: Clock;
+  /** The shared Parsing Skill library; the pipeline's own submodule unless a test says otherwise. */
+  skillLibrary?: string;
 }
 
 /**
@@ -37,6 +40,7 @@ export async function runCli(argv: string[], options: RunCliOptions = {}): Promi
     calendar,
     sheets,
     clock,
+    skillLibrary: options.skillLibrary ?? SHARED_SKILL_LIBRARY,
     io: {
       out: (line) => stdout.push(line),
       err: (line) => stderr.push(line),

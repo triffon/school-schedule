@@ -89,9 +89,9 @@ describe("subcommands", () => {
     },
   );
 
-  // `validate` has landed; the rest are still placeholders, and each drops out
-  // of this list as its own ticket lands.
-  test.each(["init", "prompt", "apply"])("%s says plainly that it does nothing yet", async (command) => {
+  // `validate` and `prompt` have landed; the rest are still placeholders, and
+  // each drops out of this list as its own ticket lands.
+  test.each(["init", "apply"])("%s says plainly that it does nothing yet", async (command) => {
     const root = await dataRepository();
 
     const result = await runCli([command, root]);
@@ -99,7 +99,7 @@ describe("subcommands", () => {
     expect(`${result.stdout}${result.stderr}`).toContain(`${command} is not implemented yet`);
   });
 
-  test.each(["init", "prompt", "apply"])(
+  test.each(["init", "apply"])(
     "%s reaches neither Google client while it is a placeholder",
     async (command) => {
       const root = await dataRepository();

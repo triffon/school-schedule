@@ -10,13 +10,13 @@ afterEach(async () => {
 });
 
 /**
- * Creates a throwaway data repository — a school's Config and Intake — and
- * returns its path. Removed after the test that made it.
+ * Creates a throwaway directory holding `files` and returns its path. Removed
+ * after the test that made it.
  *
- * `files` maps a path relative to the repository to its contents; an object is
+ * `files` maps a path relative to the directory to its contents; an object is
  * written as JSON.
  */
-export async function dataRepository(
+export async function temporaryTree(
   files: Record<string, string | object> = {},
 ): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "school-schedule-"));
@@ -33,6 +33,13 @@ export async function dataRepository(
   }
 
   return root;
+}
+
+/** A throwaway data repository — one school's Config and Intake. */
+export async function dataRepository(
+  files: Record<string, string | object> = {},
+): Promise<string> {
+  return temporaryTree(files);
 }
 
 /** A path under a real temporary directory that deliberately does not exist. */

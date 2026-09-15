@@ -43,6 +43,11 @@ export const USAGE = [
   "Arguments:",
   "  <data-repository>  Path to the repository holding this school's Config and Intake",
   "",
+  "prompt takes one more argument, the Parsing Skill for the artifact being parsed, named",
+  "<publisher>/<artifact>. Anything after it reaches the agent as a note from the operator,",
+  "which is how a Skill is told what only the operator knows — which of the school year's two",
+  "Terms is being published, or which Class the Timetable is for.",
+  "",
   "Options:",
   "  -h, --help  Show this help",
 ].join("\n");
