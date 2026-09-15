@@ -63,7 +63,7 @@ Instructions for turning one publisher's artifact into part of an Intake, writte
 _Avoid_: Parser, adapter, extractor
 
 **Config**:
-A school's settings, held alongside its Intake in the data repository: which calendar and spreadsheet to publish to, the timezone Slot times are interpreted in, and the display strings used when publishing — the Class name, the Term label and the weekday headers.
+A school's settings, held alongside its Intake in the data repository: which calendar and spreadsheet to publish to, the timezone Slot times are interpreted in, and the display choices used when publishing — the Class name, the Term label, the weekday headers and the order they read in, the name of the tab to publish into, and how wide a weekday column is.
 _Avoid_: Settings, options, profile
 
 **Destination**:

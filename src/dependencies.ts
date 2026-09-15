@@ -13,6 +13,11 @@ export interface Dependencies {
   clock: Clock;
   io: Io;
   /**
+   * Asks the operator to agree before a run changes anything. Injected like
+   * everything else that leaves the process, so a test can answer it.
+   */
+  confirm: Confirm;
+  /**
    * The root of the shared Parsing Skill library, which is the submodule in
    * the pipeline's own checkout. Injected rather than resolved where it is
    * used, so a test can hand the run a library it controls — including one
@@ -26,3 +31,9 @@ export interface Io {
   out(line: string): void;
   err(line: string): void;
 }
+
+/**
+ * A yes-or-no question, answered before the run goes ahead. Anything but a yes
+ * is a no, including there being nobody at the terminal to ask.
+ */
+export type Confirm = (question: string) => Promise<boolean>;

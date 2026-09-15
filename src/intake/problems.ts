@@ -65,6 +65,11 @@ export function typeName(value: unknown): string {
   }
 }
 
+/** `1 problem`, `4 documents` — a count and what it counts, in one phrase. */
+export function countOf(howMany: number, noun: string): string {
+  return `${howMany} ${noun}${howMany === 1 ? "" : "s"}`;
+}
+
 /** `a string`, `an integer` — the indefinite article a JSON type takes. */
 export function withArticle(noun: string): string {
   return /^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`;

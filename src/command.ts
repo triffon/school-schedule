@@ -43,12 +43,16 @@ export const USAGE = [
   "Arguments:",
   "  <data-repository>  Path to the repository holding this school's Config and Intake",
   "",
+  "apply validates the Intake first, prints what it is about to change, and publishes only once",
+  "you have agreed to it. Pass --yes where there is nobody to answer, such as an unattended run.",
+  "",
   "prompt takes one more argument, the Parsing Skill for the artifact being parsed, named",
   "<publisher>/<artifact>. Anything after it reaches the agent as a note from the operator,",
   "which is how a Skill is told what only the operator knows — which of the school year's two",
   "Terms is being published, or which Class the Timetable is for.",
   "",
   "Options:",
+  "  -y, --yes   Publish without stopping to confirm (apply only)",
   "  -h, --help  Show this help",
 ].join("\n");
 

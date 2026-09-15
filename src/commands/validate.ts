@@ -1,5 +1,5 @@
 import { INTAKE_DOCUMENTS } from "../intake/documents.js";
-import { describeProblems } from "../intake/problems.js";
+import { countOf, describeProblems } from "../intake/problems.js";
 import { SCHEMA_VERSION } from "../intake/schema.js";
 import { validateIntake } from "../intake/validate.js";
 import { EXIT_FAILURE, EXIT_OK } from "../exit-codes.js";
@@ -33,8 +33,4 @@ export async function validate(context: CommandContext): Promise<number> {
       `${countOf(INTAKE_DOCUMENTS.length, "document")} against schema version ${SCHEMA_VERSION}.`,
   );
   return EXIT_OK;
-}
-
-function countOf(howMany: number, noun: string): string {
-  return `${howMany} ${noun}${howMany === 1 ? "" : "s"}`;
 }

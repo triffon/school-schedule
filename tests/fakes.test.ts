@@ -133,11 +133,28 @@ describe("the fake Sheets client", () => {
 
     await sheets.batchUpdate({
       spreadsheetId: "sheet-id",
-      requests: [{ addSheet: { properties: { title: "5B — Term 2" } } }, { mergeCells: {} }],
+      requests: [
+        { addSheet: { properties: { sheetId: 1, title: "5B — Term 2" } } },
+        { mergeCells: {} },
+      ],
     });
 
     expect(sheets.batches).toHaveLength(1);
     expect(sheets.batches[0]?.requests).toHaveLength(2);
+  });
+
+  test("a tab a batch added is there for the next run to find, as it would be", async () => {
+    const sheets = fakeSheetsClient({ spreadsheets: { "sheet-id": [{ sheetId: 0, title: "Notes" }] } });
+
+    await sheets.batchUpdate({
+      spreadsheetId: "sheet-id",
+      requests: [{ addSheet: { properties: { sheetId: 1, title: "5B — Term 2" } } }],
+    });
+
+    const spreadsheet = await sheets.getSpreadsheet({ spreadsheetId: "sheet-id" });
+    expect(spreadsheet.sheets.map((tab) => tab.title)).toEqual(["Notes", "5B — Term 2"]);
+    // What the spreadsheet was seeded with stays what a run found there.
+    expect(sheets.tabsOf("sheet-id").map((tab) => tab.title)).toEqual(["Notes"]);
   });
 
   test("asking for a spreadsheet that is not there fails loudly", async () => {

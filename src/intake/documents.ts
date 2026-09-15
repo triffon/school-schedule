@@ -11,14 +11,21 @@ export interface Provenance {
   agent: string;
 }
 
-export type Weekday =
-  | "monday"
-  | "tuesday"
-  | "wednesday"
-  | "thursday"
-  | "friday"
-  | "saturday"
-  | "sunday";
+/**
+ * The days a Lesson may fall on, in English and lower case whatever language
+ * the school's own strings are in, and in the order the schema lists them.
+ */
+export const WEEKDAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+
+export type Weekday = (typeof WEEKDAYS)[number];
 
 /** A time window a Lesson may be taught in. Identified by its position. */
 export interface Slot {
@@ -41,6 +48,14 @@ export interface SchoolDay {
   schemaVersion: string;
   provenance: Provenance;
   sequence: SchoolDayEntry[];
+}
+
+/**
+ * The School day's Slots, in order. A Lesson names its Slot by position among
+ * exactly these, so this is also what turns a Lesson's number into a time.
+ */
+export function slotsOf(schoolDay: SchoolDay): Slot[] {
+  return schoolDay.sequence.filter((entry) => entry.kind === "slot");
 }
 
 export interface Lesson {
