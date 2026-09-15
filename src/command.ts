@@ -35,13 +35,16 @@ export const USAGE = [
   "Publishes a school's weekly Timetable to Google Calendar and Google Sheets.",
   "",
   "Commands:",
-  "  init       Authorise against Google and choose the calendar to publish to",
+  "  init       Authorise against Google, once, for every run after it",
   "  prompt     Emit a self-contained prompt for parsing a Source into an Intake",
   "  validate   Check the Intake without touching a calendar or a spreadsheet",
   "  apply      Publish the Timetable to the configured Destinations",
   "",
   "Arguments:",
   "  <data-repository>  Path to the repository holding this school's Config and Intake",
+  "",
+  "init opens a consent screen in your browser and stores what Google grants beside the Config,",
+  "uncommitted. Run it once per data repository; every run after it reaches Google without asking.",
   "",
   "apply validates the Intake first, prints what it is about to change, and publishes only once",
   "you have agreed to it. Pass --yes where there is nobody to answer, such as an unattended run.",
@@ -55,6 +58,19 @@ export const USAGE = [
   "  -y, --yes   Publish without stopping to confirm (apply only)",
   "  -h, --help  Show this help",
 ].join("\n");
+
+/**
+ * The data repository an invocation names, before anything has been checked
+ * about it. The CLI edge needs it to build the real Google clients — the token
+ * they authorise with lives in it — and the command layer is where the
+ * positional is defined, so both read it from here.
+ */
+export function dataRepositoryIn(argv: string[]): string | undefined {
+  const [name, dataRepository] = argv;
+  if (name === undefined || HELP_FLAGS.includes(name)) return undefined;
+  if (dataRepository === undefined || HELP_FLAGS.includes(dataRepository)) return undefined;
+  return dataRepository;
+}
 
 /**
  * The command layer, and the pipeline's single testing seam. Everything the run
@@ -88,7 +104,8 @@ export async function run(argv: string[], deps: Dependencies): Promise<number> {
     return EXIT_OK;
   }
 
-  const [dataRepository, ...args] = rest;
+  const dataRepository = dataRepositoryIn(argv);
+  const args = argv.slice(2);
 
   if (dataRepository === undefined) {
     deps.io.err(`school-schedule ${name}: no <data-repository> given`);

@@ -48,11 +48,12 @@ Early, and honest about it:
 | --- | --- |
 | `prompt` | Works. Emits the parsing prompt for one Source. |
 | `validate` | Works. Checks a data repository's Intake, structurally and semantically. |
-| `apply` | Publishes the weekly grid to Google Sheets — summary, confirmation, one batch. The real Google clients are not wired up yet, so it cannot reach Google. |
-| `init` | Not implemented. |
-| Calendar Destination | Designed (ADR-0003, ADR-0004, ADR-0006), not built. |
+| `init` | Works. Authorises against Google in the browser, once, and stores the grant. |
+| `apply` | Works. Publishes the weekly grid to a real Google spreadsheet. |
+| Calendar Destination | Designed (ADR-0003, ADR-0004, ADR-0006), not built. Its scope is granted, and nothing uses it yet. |
 
-Nothing is published to npm yet. Google authorisation is the next piece of work.
+Nothing is published to npm yet. Choosing the calendar to publish to — and the refusals that
+bound what the granted scope may reach — is the next piece of work.
 
 ## Getting started
 
@@ -91,6 +92,8 @@ intake/timetable.json           # the recurring weekly pattern of Lessons
 intake/non-school-days.json     # labelled date ranges inside the Term
 intake/term.json                # the dates the Timetable is in force over
 skills/                         # local Parsing Skills, if this school needs any
+credentials.json                # the OAuth client to authorise as — never committed
+token.json                      # what init was granted — never committed
 ```
 
 **Config** is the school's half of a run — everything the pipeline cannot derive from the Intake:
@@ -140,6 +143,30 @@ npm run school -- prompt some-publisher/timetable
 school-schedule <command> <data-repository> [options]
 ```
 
+**`init <data-repository>`** — authorises against Google. It opens a consent screen in your
+browser, which comes back to a loopback address the run is listening on, and writes what Google
+granted — the refresh token and the scopes — to `token.json` in the data repository. Every run
+after it reaches Google without asking you anything, refreshing the access token silently when
+it has expired. Re-running re-authorises and replaces what was stored, which is how a revoked
+grant or a withheld scope is repaired.
+
+```sh
+school-schedule init data
+```
+
+Both scopes are asked for at once — `spreadsheets` and the full `calendar` (**ADR-0004**) — so
+that adopting the Calendar Destination later costs no second consent screen. A run needing a
+scope the stored grant does not carry is refused before anything is sent, naming the scope.
+
+It authorises as an **OAuth client of your own**: an OAuth 2.0 Client ID of type *Desktop app*,
+registered in a Google Cloud project with the Sheets and Calendar APIs enabled, downloaded from
+the console as JSON and saved as `credentials.json` in the data repository. A service account
+key is the other JSON Google hands out under that name and will not do — a service account
+cannot consent on your behalf, and `init` says so rather than failing obscurely.
+
+Neither file is ever committed: `init` makes sure the data repository's `.gitignore` names the
+token before it writes it, and writes it readable only by you.
+
 **`prompt <data-repository> <publisher>/<artifact> [notes…]`** — emits, on stdout, a
 self-contained prompt for turning one Source into one Intake document: the Parsing Skill, the
 Intake schema, and what to record about where the artifact came from. Everything said to you
@@ -170,9 +197,6 @@ the Sheets quota counts.
 school-schedule apply data           # summarises, then asks
 school-schedule apply data --yes     # for a run with nobody at the terminal
 ```
-
-**`init <data-repository>`** — will authorise against Google, let you pick or create a
-calendar, and write its identifier into Config. Not implemented yet.
 
 Exit status distinguishes a usage mistake from a run that started and failed: `0` success,
 `1` failure, `2` usage. Declining `apply`'s question publishes nothing and exits `1`, so a run
@@ -208,6 +232,7 @@ for rejection, are in [`docs/adr/`](docs/adr/):
 | [0006](docs/adr/0006-correlate-events-by-extended-properties.md) | Events are correlated by extended properties, not by client-specified IDs |
 | [0007](docs/adr/0007-generate-sheet-layout-rather-than-fill-a-template.md) | The sheet layout is generated, not filled into a pre-formatted tab |
 | [0008](docs/adr/0008-blocks-are-the-published-unit.md) | Blocks, not Lessons, are the unit that gets published |
+| [0009](docs/adr/0009-google-over-rest-with-the-platforms-fetch.md) | Google is reached over REST with the platform's `fetch`, not the `googleapis` SDK |
 
 ## Development
 
@@ -222,15 +247,27 @@ Tests drive the CLI the way an operator does. Everything the pipeline touches ou
 the Google clients, the clock, the Skill library, stdout and stderr, and the question `apply`
 stops to ask — arrives through one injected `Dependencies` object, so a test asserts on what
 left the process: the exit status, the lines written, and the requests the fake clients
-recorded. The command layer in [src/command.ts](src/command.ts) is that single seam.
+recorded. The command layer in [src/command.ts](src/command.ts) is that seam.
+
+`init` is the exception, and says so: it is the one command that has to reach outside before
+there is anything to inject — it listens on a loopback socket and opens a browser at Google's
+consent screen. Its own seam is one layer down, at `authoriseInBrowser`
+([src/google/authorise.ts](src/google/authorise.ts)), whose `invite` stands for "put this in
+front of the operator". A test consents by fetching the loopback address the consent URL named,
+so the whole flow runs locally but for Google's two endpoints.
 
 Sheets requests are asserted through a renderer that applies them the way Sheets would
 ([tests/support/rendered-sheet.ts](tests/support/rendered-sheet.ts)), so a case reads as the
 grid a person would see — values, merges in A1 notation, formats, column widths — rather than
 as a heap of wire JSON.
 
+The last hop to the network is one narrow function, `HttpFetch`, so the real Google clients are
+tested by handing them a stand-in and asserting on what would have gone out
+([tests/google-clients.test.ts](tests/google-clients.test.ts)). Google is reached over REST
+rather than through the `googleapis` SDK (**ADR-0009**).
+
 Credentials never belong in a checkout: `credentials.json`, `token.json` and `*-key.json` are
-gitignored.
+gitignored, here and in a data repository.
 
 Contributor and agent conventions — the issue tracker, triage labels, and how to edit CONTEXT.md
 and the ADRs — are in [CLAUDE.md](CLAUDE.md) and [`docs/agents/`](docs/agents/).

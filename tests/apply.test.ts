@@ -7,7 +7,7 @@ import {
   SPREADSHEET_ID,
 } from "./support/config.js";
 import { dataRepository } from "./support/data-repository.js";
-import { fakeSheetsClient } from "./support/fake-sheets.js";
+import { fakeSheetsClient, type FakeSheetsClient } from "./support/fake-sheets.js";
 import { intakeFiles, TIMETABLE_FILE, timetable } from "./support/intake.js";
 import { formatAt, renderedTab, renderedTabs } from "./support/rendered-sheet.js";
 import { runCli } from "./support/run-cli.js";
@@ -434,5 +434,52 @@ describe("a grid that prints", () => {
     // A subject is the one thing that can outgrow its column.
     expect(formatAt(tab, "D4")).toMatchObject({ wrapStrategy: "WRAP" });
     expect(formatAt(tab, "A4")).not.toMatchObject({ wrapStrategy: "WRAP" });
+  });
+});
+
+/**
+ * A Destination that will not have the run is the operator's problem in the
+ * same way a bad Config is: nothing published, one thing to put right.
+ */
+describe("a Destination apply cannot reach", () => {
+  /** A Sheets client that refuses everything, as an unauthorised one does. */
+  function refusing(why: string): FakeSheetsClient {
+    const refuse = async (): Promise<never> => {
+      throw new Error(why);
+    };
+    return {
+      requests: [],
+      batches: [],
+      tabsOf: () => [],
+      getSpreadsheet: refuse,
+      batchUpdate: refuse,
+    };
+  }
+
+  test("fails with what Google said, and says that nothing has been published", async () => {
+    const root = await dataRepository({ ...configFile(), ...intakeFiles() });
+    const sheets = refusing(
+      "school-schedule: Google Sheets refused the request — 403 PERMISSION_DENIED: no permission",
+    );
+
+    const result = await runCli(["apply", root, "--yes"], { sheets });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("PERMISSION_DENIED");
+    expect(result.stderr).toMatch(/Nothing has been published/);
+  });
+
+  test("a data repository that was never authorised is told to run init", async () => {
+    const root = await dataRepository({ ...configFile(), ...intakeFiles() });
+    const sheets = refusing(
+      "school-schedule: this data repository has not been authorised against Google\n" +
+        "Run `school-schedule init` once, and no later run will ask again.",
+    );
+
+    const result = await runCli(["apply", root, "--yes"], { sheets });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("init");
+    expect(result.stdout).not.toContain("Published");
   });
 });

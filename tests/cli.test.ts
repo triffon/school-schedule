@@ -89,27 +89,27 @@ describe("subcommands", () => {
     },
   );
 
-  // `validate`, `prompt` and `apply` have landed; `init` is still a
-  // placeholder, and drops out of this list as its own ticket lands.
-  test.each(["init"])("%s says plainly that it does nothing yet", async (command) => {
+  // Every subcommand has landed, so nothing says it does nothing yet. `init`
+  // authorises on its own rather than through the injected clients, which is
+  // why it reaches neither.
+  test("init reaches neither injected Google client", async () => {
     const root = await dataRepository();
 
-    const result = await runCli([command, root]);
+    const result = await runCli(["init", root]);
 
-    expect(`${result.stdout}${result.stderr}`).toContain(`${command} is not implemented yet`);
+    expect(result.calendar.requests).toEqual([]);
+    expect(result.sheets.requests).toEqual([]);
   });
 
-  test.each(["init"])(
-    "%s reaches neither Google client while it is a placeholder",
-    async (command) => {
-      const root = await dataRepository();
+  test("no subcommand is a placeholder any more", async () => {
+    const root = await dataRepository();
 
+    for (const command of ["init", "prompt", "validate", "apply"]) {
       const result = await runCli([command, root]);
 
-      expect(result.calendar.requests).toEqual([]);
-      expect(result.sheets.requests).toEqual([]);
-    },
-  );
+      expect(`${result.stdout}${result.stderr}`).not.toContain("not implemented yet");
+    }
+  });
 });
 
 describe("the injected clock", () => {

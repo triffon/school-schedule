@@ -47,7 +47,13 @@ export async function apply(context: CommandContext): Promise<number> {
 
   // The plan is worked out from a read of the spreadsheet, so the summary
   // describes this spreadsheet rather than what the pipeline hopes to find.
-  const plan = await planSheet(context.deps.sheets, config.config, validation.intake);
+  let plan: SheetPlan;
+  try {
+    plan = await planSheet(context.deps.sheets, config.config, validation.intake);
+  } catch (cause) {
+    return stopped(context, cause);
+  }
+
   for (const line of summarise(plan, config.config, validation.intake)) io.out(line);
 
   if (!context.args.some((argument) => SKIP_CONFIRMATION.includes(argument))) {
@@ -58,9 +64,32 @@ export async function apply(context: CommandContext): Promise<number> {
     }
   }
 
-  await publishSheet(context.deps.sheets, plan);
+  try {
+    await publishSheet(context.deps.sheets, plan);
+  } catch (cause) {
+    return stopped(context, cause);
+  }
+
   io.out(`Published ${plan.tab}.`);
   return EXIT_OK;
+}
+
+/**
+ * Reports a Destination that would not have the run — unauthorised, refused, or
+ * simply unreachable — in the same words a bad Config is reported in, because
+ * it leaves the operator in the same place: nothing published, one thing to put
+ * right, and a re-run.
+ *
+ * The layout goes out as a single batch, which Sheets applies whole or not at
+ * all, so a failure here really does mean nothing was published.
+ */
+function stopped(context: CommandContext, cause: unknown): number {
+  const { io } = context.deps;
+
+  io.err(`school-schedule apply: ${(cause as Error).message}`);
+  io.err("");
+  io.err("Nothing has been published.");
+  return EXIT_FAILURE;
 }
 
 /**

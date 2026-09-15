@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline/promises";
-import { run } from "./command.js";
+import { resolve } from "node:path";
+import { dataRepositoryIn, run } from "./command.js";
 import { EXIT_FAILURE } from "./exit-codes.js";
-import { unavailableCalendarClient, unavailableSheetsClient } from "./ports/unavailable.js";
+import { storedAuthorisation } from "./google/authorisation.js";
+import { googleCalendarClient } from "./google/calendar.js";
+import { googleSheetsClient } from "./google/sheets.js";
 import { systemClock } from "./ports/clock.js";
 import { SHARED_SKILL_LIBRARY } from "./prompt/library.js";
 
@@ -31,10 +34,27 @@ async function ask(question: string): Promise<boolean> {
   }
 }
 
+const argv = process.argv.slice(2);
+
+/**
+ * The real Google clients are built here, at the edge, and injected like
+ * everything else that leaves the process — so that nothing below the command
+ * layer learns a token exists, and every test goes on driving subcommands with
+ * fakes.
+ *
+ * They read that token from the data repository, which is the positional the
+ * command layer is about to parse. Where there is none the run is a usage
+ * mistake, reported before any client is reached, so the fallback here is never
+ * read from.
+ */
+const authorisation = storedAuthorisation(resolve(dataRepositoryIn(argv) ?? "."), {
+  clock: systemClock,
+});
+
 try {
-  process.exitCode = await run(process.argv.slice(2), {
-    calendar: unavailableCalendarClient(),
-    sheets: unavailableSheetsClient(),
+  process.exitCode = await run(argv, {
+    calendar: googleCalendarClient(authorisation),
+    sheets: googleSheetsClient(authorisation),
     clock: systemClock,
     confirm: ask,
     skillLibrary: SHARED_SKILL_LIBRARY,

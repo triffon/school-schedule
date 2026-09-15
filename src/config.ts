@@ -1,7 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { WEEKDAYS, type Weekday } from "./intake/documents.js";
 import { show, type Problem } from "./intake/problems.js";
+import { readJsonFile, type JsonFile } from "./json-file.js";
 
 /**
  * A school's settings, read from `config.json` in its data repository: which
@@ -48,6 +47,14 @@ export interface WeekdayColumn {
 
 export const CONFIG_FILE = "config.json";
 
+const CONFIG_DOCUMENT: JsonFile = {
+  file: CONFIG_FILE,
+  noun: "the Config",
+  missing:
+    "expected this school's Config, but the file is not there. It names the " +
+    "spreadsheet and calendar to publish to and the strings to publish with.",
+};
+
 /**
  * Defaults for the settings a school has no opinion about. Each is a choice the
  * pipeline can make on the school's behalf without being wrong for it; anything
@@ -65,7 +72,7 @@ export type ConfigReading = { ok: true; config: Config } | { ok: false; problems
  * everything still missing from it in one pass.
  */
 export async function readConfig(dataRepository: string): Promise<ConfigReading> {
-  const read = await readConfigFile(dataRepository);
+  const read = await readJsonFile(dataRepository, CONFIG_DOCUMENT);
   if (!read.ok) return read;
 
   const problems: Problem[] = [];
@@ -111,44 +118,6 @@ export async function readConfig(dataRepository: string): Promise<ConfigReading>
 /** The tab the pipeline owns, with the Class and the Term filled into it. */
 export function tabName(display: Display): string {
   return display.tab.replaceAll("{class}", display.class).replaceAll("{term}", display.term);
-}
-
-type ReadFile = { ok: true; content: unknown } | { ok: false; problems: Problem[] };
-
-async function readConfigFile(dataRepository: string): Promise<ReadFile> {
-  let text: string;
-  try {
-    text = await readFile(join(dataRepository, CONFIG_FILE), "utf8");
-  } catch (cause) {
-    const code = (cause as NodeJS.ErrnoException).code;
-    return {
-      ok: false,
-      problems: [
-        {
-          file: CONFIG_FILE,
-          message:
-            code === "ENOENT"
-              ? "expected this school's Config, but the file is not there. It names the " +
-                "spreadsheet and calendar to publish to and the strings to publish with."
-              : `the Config could not be read: ${(cause as Error).message}`,
-        },
-      ],
-    };
-  }
-
-  try {
-    return { ok: true, content: JSON.parse(text) };
-  } catch (cause) {
-    return {
-      ok: false,
-      problems: [
-        {
-          file: CONFIG_FILE,
-          message: `expected the Config as JSON, but it could not be parsed: ${(cause as Error).message}`,
-        },
-      ],
-    };
-  }
 }
 
 function problem(at: string, message: string): Problem {
