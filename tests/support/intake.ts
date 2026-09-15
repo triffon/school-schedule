@@ -73,6 +73,18 @@ export const term = {
   end: "2026-01-30",
 };
 
+/**
+ * The fixture's School day with entries of its sequence replaced by position,
+ * so that a test breaks exactly one time of day and the rest of the day around
+ * it stays valid.
+ */
+export function schoolDayWith(replacements: Record<number, object>): object {
+  return {
+    ...schoolDay,
+    sequence: schoolDay.sequence.map((entry, index) => replacements[index] ?? entry),
+  };
+}
+
 export const SCHOOL_DAY_FILE = "intake/school-day.json";
 export const TIMETABLE_FILE = "intake/timetable.json";
 export const NON_SCHOOL_DAYS_FILE = "intake/non-school-days.json";

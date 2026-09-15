@@ -4,6 +4,7 @@ import {
   intakeFiles,
   nonSchoolDays,
   schoolDay,
+  schoolDayWith,
   term,
   timetable,
   NON_SCHOOL_DAYS_FILE,
@@ -291,6 +292,232 @@ describe("a weekday and Slot identifying more than one Lesson", () => {
   });
 });
 
+describe("the School day's sequence", () => {
+  // The whole sequence is given rather than one entry replaced, because the
+  // fixture separates every Slot with a Break and two Slots can only be
+  // adjacent in a day that runs them back to back.
+  test("two Slots that overlap are rejected, naming the pair", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [SCHOOL_DAY_FILE]: {
+          ...schoolDay,
+          sequence: [
+            { kind: "slot", start: "08:00", end: "08:40" },
+            { kind: "slot", start: "08:40", end: "09:20" },
+            { kind: "slot", start: "09:10", end: "09:50" },
+            { kind: "slot", start: "09:50", end: "10:30" },
+            { kind: "slot", start: "10:30", end: "11:10" },
+          ],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(SCHOOL_DAY_FILE);
+    expect(result.stderr).toContain("sequence[2]");
+    expect(result.stderr).toContain("sequence[1]");
+    expect(result.stderr).toContain("Slot 3");
+    expect(result.stderr).toContain("Slot 2");
+    expect(result.stderr).toContain('"09:10"');
+    expect(result.stderr).toMatch(/overlap/i);
+  });
+
+  test("a Slot and the Break after it that do not meet are rejected", async () => {
+    const root = await dataRepository(
+      intakeFiles({ [SCHOOL_DAY_FILE]: schoolDayWith({ 1: { kind: "break", start: "08:45", end: "08:50" } }) }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(SCHOOL_DAY_FILE);
+    expect(result.stderr).toContain("sequence[1]");
+    expect(result.stderr).toContain('"08:45"');
+    expect(result.stderr).toContain('"08:40"');
+    expect(result.stderr).toMatch(/unaccounted for/i);
+  });
+
+  test("a Break overlapping the Slot before it is rejected", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [SCHOOL_DAY_FILE]: schoolDayWith({
+          3: { kind: "break", start: "09:20", end: "09:50", label: "голямо междучасие" },
+        }),
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("sequence[3]");
+    expect(result.stderr).toContain('"09:20"');
+    expect(result.stderr).toMatch(/overlap/i);
+  });
+
+  test("a Slot that ends before it begins is rejected", async () => {
+    const root = await dataRepository(
+      intakeFiles({ [SCHOOL_DAY_FILE]: schoolDayWith({ 0: { kind: "slot", start: "08:40", end: "08:00" } }) }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("sequence[0].end");
+    expect(result.stderr).toContain('"08:00"');
+    expect(result.stderr).toContain('"08:40"');
+  });
+});
+
+describe("a Lesson naming a Slot the School day does not declare", () => {
+  test("is rejected, naming the weekday, the position and how many Slots there are", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [TIMETABLE_FILE]: {
+          ...timetable,
+          lessons: [...timetable.lessons, { weekday: "thursday", slot: 6, subject: "Химия" }],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(TIMETABLE_FILE);
+    expect(result.stderr).toContain(`lessons[${timetable.lessons.length}]`);
+    expect(result.stderr).toContain("thursday");
+    expect(result.stderr).toContain("Slot 6");
+    expect(result.stderr).toContain("5 Slots");
+  });
+
+  test("but a Lesson in the last Slot the School day declares is normal", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [TIMETABLE_FILE]: {
+          ...timetable,
+          lessons: [{ weekday: "friday", slot: 5, subject: "Музика" }],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).toBe(0);
+  });
+});
+
+describe("a Non-school day range outside the Term", () => {
+  test("one beginning before the Term starts is rejected, naming the range and its label", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [NON_SCHOOL_DAYS_FILE]: {
+          ...nonSchoolDays,
+          ranges: [{ label: "Есенна ваканция", start: "2025-09-01", end: "2025-09-20" }],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(NON_SCHOOL_DAYS_FILE);
+    expect(result.stderr).toContain("ranges[0]");
+    expect(result.stderr).toContain("Есенна ваканция");
+    expect(result.stderr).toContain("2025-09-01");
+    expect(result.stderr).toContain("2025-09-15");
+  });
+
+  test("one falling wholly after the Term ends is rejected", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [NON_SCHOOL_DAYS_FILE]: {
+          ...nonSchoolDays,
+          ranges: [{ label: "Лятна ваканция", start: "2026-06-15", end: "2026-06-30" }],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("ranges[0]");
+    expect(result.stderr).toContain("Лятна ваканция");
+    expect(result.stderr).toContain("2026-06-30");
+    expect(result.stderr).toContain("2026-01-30");
+  });
+
+  test("one that ends before it begins is rejected", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [NON_SCHOOL_DAYS_FILE]: {
+          ...nonSchoolDays,
+          ranges: [{ label: "Коледна ваканция", start: "2026-01-04", end: "2025-12-24" }],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("ranges[0]");
+    expect(result.stderr).toContain("Коледна ваканция");
+    expect(result.stderr).toContain("2025-12-24");
+  });
+
+  test("but one ending on the Term's last day is inside it", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [NON_SCHOOL_DAYS_FILE]: {
+          ...nonSchoolDays,
+          ranges: [{ label: "Коледна ваканция", start: term.start, end: term.end }],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).toBe(0);
+  });
+});
+
+describe("a Term whose end precedes its start", () => {
+  test("is rejected, naming both bounds", async () => {
+    const root = await dataRepository(
+      intakeFiles({ [TERM_FILE]: { ...term, start: "2026-01-30", end: "2025-09-15" } }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(TERM_FILE);
+    expect(result.stderr).toContain("2026-01-30");
+    expect(result.stderr).toContain("2025-09-15");
+  });
+
+  test("and one that begins and ends on the same day is rejected too", async () => {
+    const root = await dataRepository(
+      intakeFiles({ [TERM_FILE]: { ...term, start: "2025-09-15", end: "2025-09-15" } }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(TERM_FILE);
+    expect(result.stderr).toContain("2025-09-15");
+  });
+
+  test("is reported on its own, not as every Non-school day falling outside it", async () => {
+    const root = await dataRepository(
+      intakeFiles({ [TERM_FILE]: { ...term, start: "2026-01-30", end: "2025-09-15" } }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.stderr).not.toContain(NON_SCHOOL_DAYS_FILE);
+  });
+});
+
 describe("the report", () => {
   test("every document is checked, so one pass shows everything to correct", async () => {
     const root = await dataRepository(
@@ -304,5 +531,36 @@ describe("the report", () => {
 
     expect(result.stderr).toContain(TERM_FILE);
     expect(result.stderr).toContain(TIMETABLE_FILE);
+  });
+
+  test("every semantic check runs too, across documents", async () => {
+    const root = await dataRepository(
+      intakeFiles({
+        [SCHOOL_DAY_FILE]: schoolDayWith({ 1: { kind: "break", start: "08:45", end: "08:50" } }),
+        [TIMETABLE_FILE]: {
+          ...timetable,
+          lessons: [...timetable.lessons, { weekday: "friday", slot: 9, subject: "Химия" }],
+        },
+      }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.stderr).toContain(SCHOOL_DAY_FILE);
+    expect(result.stderr).toContain(TIMETABLE_FILE);
+    expect(result.stderr).toContain("2 problems");
+  });
+
+  test("a semantic failure is total, exactly as a structural one is", async () => {
+    const root = await dataRepository(
+      intakeFiles({ [TERM_FILE]: { ...term, start: "2026-01-30", end: "2025-09-15" } }),
+    );
+
+    const result = await runCli(["validate", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("is not valid");
+    expect(result.stderr).toContain("1 problem.");
+    expect(result.stderr).toContain("Nothing has been published");
   });
 });

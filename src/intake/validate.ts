@@ -11,6 +11,7 @@ import {
 } from "./documents.js";
 import { show, typeName, withArticle, type Problem } from "./problems.js";
 import { INTAKE_SCHEMA, SCHEMA_VERSION } from "./schema.js";
+import { semanticProblems } from "./semantics.js";
 
 // ajv and ajv-formats are CommonJS, so under Node's ESM interop the module
 // namespace is what arrives and the export sits on `.default`.
@@ -52,7 +53,14 @@ export async function validateIntake(dataRepository: string): Promise<IntakeVali
 
   // Every document is present and schema-valid, which is exactly what the types
   // in `documents.ts` claim.
-  return { ok: true, intake: documents as unknown as Intake };
+  const intake = documents as unknown as Intake;
+
+  // Only now, with every value known to be the right shape, is it worth asking
+  // whether what they describe makes sense.
+  const semantic = semanticProblems(intake);
+  if (semantic.length > 0) return { ok: false, problems: semantic };
+
+  return { ok: true, intake };
 }
 
 type ReadDocument = { ok: true; content: unknown } | { ok: false; problems: Problem[] };
