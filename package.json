@@ -18,7 +18,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "school": "sh -c 'command=$1; shift; tsx src/cli.ts \"$command\" data \"$@\"' --"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

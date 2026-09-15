@@ -4,3 +4,7 @@ credentials.json
 token.json
 node_modules/
 dist/
+
+# A symlink to the data repository being worked against — school-specific, and
+# one installation serves several schools, so it never belongs to this repo
+/data
