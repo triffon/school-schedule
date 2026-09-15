@@ -48,7 +48,7 @@ Early, and honest about it:
 | --- | --- |
 | `prompt` | Works. Emits the parsing prompt for one Source. |
 | `validate` | Works. Checks a data repository's Intake, structurally and semantically. |
-| `apply` | Renders the Sheets layout, but the real Google clients are not wired up yet, so it cannot reach Google. |
+| `apply` | Publishes the weekly grid to Google Sheets — summary, confirmation, one batch. The real Google clients are not wired up yet, so it cannot reach Google. |
 | `init` | Not implemented. |
 | Calendar Destination | Designed (ADR-0003, ADR-0004, ADR-0006), not built. |
 
@@ -85,13 +85,40 @@ that positional argument. Nothing school-specific is committed here, so one inst
 several schools and this repository stays publishable.
 
 ```
-config.json                     # which calendar and spreadsheet, the timezone, display strings
+config.json                     # which calendar and spreadsheet, the timezone, display choices
 intake/school-day.json          # the ordered Slots and Breaks every day follows
 intake/timetable.json           # the recurring weekly pattern of Lessons
 intake/non-school-days.json     # labelled date ranges inside the Term
 intake/term.json                # the dates the Timetable is in force over
 skills/                         # local Parsing Skills, if this school needs any
 ```
+
+**Config** is the school's half of a run — everything the pipeline cannot derive from the Intake:
+
+```json
+{
+  "timezone": "Europe/Sofia",
+  "calendarId": "school@group.calendar.google.com",
+  "spreadsheetId": "1AbC…",
+  "display": {
+    "class": "5В",
+    "term": "Учебна 2025/26 година, I срок",
+    "weekdays": [
+      { "weekday": "monday", "header": "Понеделник" },
+      { "weekday": "tuesday", "header": "Вторник" }
+    ],
+    "tab": "{class} — {term}",
+    "weekdayColumnWidth": 150
+  }
+}
+```
+
+Each weekday names itself as the Intake does and carries the header it is rendered under, so
+which weekdays get a column, in what order and with what capitalisation is the school's choice
+rather than a locale's. `tab` names the one tab `apply` owns, over `{class}` and `{term}`;
+it, `weekdayColumnWidth` and `timezone` may be left out and default to what is shown above. A
+setting the Config has no field for is reported rather than ignored, because a misspelled one
+is otherwise indistinguishable from an unset one.
 
 The four Intake documents are separate files because they are re-parsed on different cadences:
 the Term and the Non-school days when the ministry publishes its order, the School day and the
@@ -128,15 +155,28 @@ school-schedule prompt data ministry-of-education-and-science/term > /tmp/prompt
 spreadsheet, which is what to run immediately after pasting agent output into place. Failure is
 total and every fault is reported at once, named by file and by JSON path.
 
-**`apply <data-repository>`** — validates the Config and the Intake together, then publishes
-the Timetable to the configured Destinations. Both halves are reported together: someone setting
-a school up for the first time has both to fill in.
+**`apply <data-repository> [--yes]`** — validates the Config and the Intake together, prints
+what it is about to change, and publishes only once you have agreed to it. Both halves are
+reported together: someone setting a school up for the first time has both to fill in.
+
+It writes the weekly grid — times down the left, weekdays across the top, one row per Slot, and
+each Block one vertically merged cell — into exactly one tab, the one `display.tab` names,
+created when it is not there. Every other tab in the spreadsheet is left alone, including one
+orphaned by renaming that template. The layout is regenerated whole on every run, merges and
+formatting and column widths as well as values, and goes out as a single batch, which is what
+the Sheets quota counts.
+
+```sh
+school-schedule apply data           # summarises, then asks
+school-schedule apply data --yes     # for a run with nobody at the terminal
+```
 
 **`init <data-repository>`** — will authorise against Google, let you pick or create a
 calendar, and write its identifier into Config. Not implemented yet.
 
 Exit status distinguishes a usage mistake from a run that started and failed: `0` success,
-`1` failure, `2` usage.
+`1` failure, `2` usage. Declining `apply`'s question publishes nothing and exits `1`, so a run
+that was never agreed to cannot be mistaken for one that published.
 
 ## Parsing Skills
 
@@ -179,10 +219,15 @@ npm run build
 ```
 
 Tests drive the CLI the way an operator does. Everything the pipeline touches outside itself —
-the Google clients, the clock, the Skill library, stdout and stderr — arrives through one
-injected `Dependencies` object, so a test asserts on what left the process: the exit status, the
-lines written, and the requests the fake clients recorded. The command layer in
-[src/command.ts](src/command.ts) is that single seam.
+the Google clients, the clock, the Skill library, stdout and stderr, and the question `apply`
+stops to ask — arrives through one injected `Dependencies` object, so a test asserts on what
+left the process: the exit status, the lines written, and the requests the fake clients
+recorded. The command layer in [src/command.ts](src/command.ts) is that single seam.
+
+Sheets requests are asserted through a renderer that applies them the way Sheets would
+([tests/support/rendered-sheet.ts](tests/support/rendered-sheet.ts)), so a case reads as the
+grid a person would see — values, merges in A1 notation, formats, column widths — rather than
+as a heap of wire JSON.
 
 Credentials never belong in a checkout: `credentials.json`, `token.json` and `*-key.json` are
 gitignored.
