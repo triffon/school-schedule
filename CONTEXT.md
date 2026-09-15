@@ -54,6 +54,10 @@ _Avoid_: Input file, feed
 The validated, structured data extracted from the Sources — Slots, Timetable, Non-school days and Term bounds — and the sole input to Materialisation. The boundary between untrusted artifacts and the deterministic pipeline.
 _Avoid_: Intermediate representation, IR, parsed data, extract
 
+**Provenance**:
+The record every Intake document carries of where it came from: the Source's name, a hash of that Source, when it was parsed and by which agent. What tells an operator their Intake is stale once the school republishes.
+_Avoid_: Metadata, origin, audit trail
+
 **Parsing Skill**:
 Instructions for turning one publisher's artifact into part of an Intake, written for an agent rather than for code.
 _Avoid_: Parser, adapter, extractor

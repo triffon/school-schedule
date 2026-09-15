@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/triffon/school-schedule/intake.schema.json",
+  "title": "Intake",
+  "description": "The contract for the four Intake documents a school's data repository holds: the School day (intake/school-day.json), the Timetable (intake/timetable.json), Non-school days (intake/non-school-days.json) and the Term (intake/term.json). Each is validated against the matching definition under $defs. This one artifact is both what the validator uses and what the `prompt` command embeds, so the two cannot drift.",
+  "$defs": {
+    "schemaVersion": {
+      "description": "The version of this contract the document was produced against. A document carrying any other version is rejected rather than misread.",
+      "const": "1"
+    },
+    "provenance": {
+      "description": "Where this document came from, so an operator can tell whether it is stale when the school republishes its Source.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "sourceHash", "parsedAt", "agent"],
+      "properties": {
+        "source": {
+          "description": "The name of the Source this document was parsed from, such as the artifact's filename.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceHash": {
+          "description": "A hash of the Source's bytes, so a republished Source is detectable.",
+          "type": "string",
+          "minLength": 1
+        },
+        "parsedAt": { "$ref": "#/$defs/timestamp" },
+        "agent": {
+          "description": "The agent that did the parsing, such as a model name.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "timeOfDay": {
+      "$comment": "A scalar shape: its description is worded as a phrase because the validator quotes it back at the operator.",
+      "description": "a time of day as HH:MM, 24-hour",
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+    },
+    "date": {
+      "$comment": "A scalar shape: its description is worded as a phrase because the validator quotes it back at the operator.",
+      "description": "a calendar date as YYYY-MM-DD",
+      "type": "string",
+      "format": "date"
+    },
+    "timestamp": {
+      "$comment": "A scalar shape: its description is worded as a phrase because the validator quotes it back at the operator.",
+      "description": "an RFC 3339 timestamp such as 2025-09-10T12:00:00Z",
+      "type": "string",
+      "format": "date-time"
+    },
+    "weekday": {
+      "description": "A day of the week, in English and lower case, whatever language the school's own strings are in.",
+      "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    },
+    "slot": {
+      "description": "A Slot: a time window during which a Lesson may be taught. It carries no number — a Slot is identified by its position among the School day's Slots.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "start", "end"],
+      "properties": {
+        "kind": { "const": "slot" },
+        "start": { "$ref": "#/$defs/timeOfDay" },
+        "end": { "$ref": "#/$defs/timeOfDay" }
+      }
+    },
+    "break": {
+      "description": "A Break: a time window between two Slots during which no Lesson is taught. Its label is what the sheet renders; an unlabelled Break leaves no row.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "start", "end"],
+      "properties": {
+        "kind": { "const": "break" },
+        "start": { "$ref": "#/$defs/timeOfDay" },
+        "end": { "$ref": "#/$defs/timeOfDay" },
+        "label": { "type": "string", "minLength": 1 }
+      }
+    },
+    "schoolDayEntry": {
+      "description": "One entry in the School day's sequence: either a Slot or a Break, told apart by `kind`.",
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$comment": "Constrained further by the branches below.", "enum": ["slot", "break"] }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["kind"], "properties": { "kind": { "const": "slot" } } },
+          "then": { "$ref": "#/$defs/slot" }
+        },
+        {
+          "if": { "required": ["kind"], "properties": { "kind": { "const": "break" } } },
+          "then": { "$ref": "#/$defs/break" }
+        }
+      ]
+    },
+    "lesson": {
+      "description": "A Lesson: one cell of the Timetable. A subject and nothing else — no teacher, no room, no group.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weekday", "slot", "subject"],
+      "properties": {
+        "weekday": { "$ref": "#/$defs/weekday" },
+        "slot": {
+          "description": "The Slot's position among the School day's Slots, counting from 1 and ignoring Breaks.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "subject": {
+          "description": "The subject exactly as the school names it; this is published verbatim.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "nonSchoolDayRange": {
+      "description": "A labelled run of dates inside the Term on which no Lesson is taught. A single day is a range whose start and end are equal.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "start", "end"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/date" },
+        "end": { "$ref": "#/$defs/date" }
+      }
+    },
+    "schoolDay": {
+      "description": "The School day: the ordered sequence of Slots and Breaks that every day of the week follows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "provenance", "sequence"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/schemaVersion" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "sequence": {
+          "description": "Slots and Breaks in the order they occur, from the first Slot of the day to the last.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/schoolDayEntry" }
+        }
+      }
+    },
+    "timetable": {
+      "description": "The Timetable: the recurring weekly pattern of Lessons. Ragged days are normal — not every weekday and Slot pairing has a Lesson.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "provenance", "lessons"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/schemaVersion" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "lessons": {
+          "description": "Every Lesson the week holds, in any order. A weekday and Slot identify at most one Lesson, so no two entries may name the same pair.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/lesson" }
+        }
+      }
+    },
+    "nonSchoolDays": {
+      "description": "The Non-school days: dates inside the Term on which no Lesson is taught, declared as labelled ranges rather than as individual dates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "provenance", "ranges"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/schemaVersion" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "ranges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonSchoolDayRange" }
+        }
+      }
+    },
+    "term": {
+      "description": "The Term: the single date range over which the Timetable is in force. A school year with two terms is two runs against two Intakes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "provenance", "start", "end"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/schemaVersion" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "start": { "$ref": "#/$defs/date" },
+        "end": { "$ref": "#/$defs/date" }
+      }
+    }
+  }
+}

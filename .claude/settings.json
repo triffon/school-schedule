@@ -3,7 +3,10 @@
     "allow": [
       "Bash(npm run typecheck *)",
       "Bash(npm run build *)",
-      "Bash(npx vitest run *)"
+      "Bash(npx vitest run *)",
+      "Bash(gh issue *)",
+      "Bash(npx tsc *)",
+      "Bash(npm test *)"
     ]
   }
 }
