@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { CALENDAR_ID, config, configFile, SPREADSHEET_ID } from "./support/config.js";
 import { dataRepository } from "./support/data-repository.js";
+import type { CalendarEvent } from "../src/ports/calendar.js";
 import type { FakeCalendarClient } from "./support/fake-calendar.js";
-import { fakeSheetsClient } from "./support/fake-sheets.js";
+import { schoolSpreadsheet } from "./support/fake-sheets.js";
 import {
   intakeFiles,
   nonSchoolDays,
@@ -19,15 +20,10 @@ import { runCli, type CliRun } from "./support/run-cli.js";
  * for the Term and skipping the Non-school days (ADR-0003, ADR-0008).
  */
 
-/** A spreadsheet for the run's other half, which these tests say nothing about. */
-function spreadsheet() {
-  return fakeSheetsClient({ spreadsheets: { [SPREADSHEET_ID]: [{ sheetId: 0, title: "Бележки" }] } });
-}
-
 /** Publishes the fixture week, or a Timetable a test has bent, to both Destinations. */
 async function publish(files: Record<string, unknown> = {}): Promise<CliRun> {
   const root = await dataRepository({ ...configFile(), ...intakeFiles(files) });
-  return runCli(["apply", root, "--yes"], { sheets: spreadsheet() });
+  return runCli(["apply", root, "--yes"], { sheets: schoolSpreadsheet() });
 }
 
 /** Every event the run left on the calendar Config names, in the order it wrote them. */
@@ -35,8 +31,12 @@ function published(run: CliRun) {
   return run.calendar.eventsOn(CALENDAR_ID);
 }
 
-/** A Calendar client that will not have the run, as an unauthorised one does. */
-function refusing(why: string): FakeCalendarClient {
+/**
+ * A Calendar client that will not have the run, as an unauthorised one does.
+ * `listing` is what it answers a listing with, for a calendar that lets the run
+ * work out what it would change and then refuses to be written to.
+ */
+function refusing(why: string, listing?: CalendarEvent[]): FakeCalendarClient {
   const refuse = async (): Promise<never> => {
     throw new Error(why);
   };
@@ -46,7 +46,7 @@ function refusing(why: string): FakeCalendarClient {
     eventsOn: () => [],
     listCalendars: refuse,
     createCalendar: refuse,
-    listEvents: refuse,
+    listEvents: listing === undefined ? refuse : async () => listing,
     insertEvent: refuse,
     updateEvent: refuse,
     deleteEvent: refuse,
@@ -267,25 +267,40 @@ describe("what an event says and carries", () => {
     }
   });
 
-  test("each one names its Block and its Term, for a later run to correlate on", async () => {
+  test("each one names its Block, for a later run to correlate on", async () => {
     const run = await publish();
 
-    // A Block is identified by its weekday and the Slot its run begins at, and
-    // the Term by the dates it is in force over (ADR-0006). Nothing reads these
-    // yet; reconciliation will.
-    expect(published(run).map((event) => event.extendedProperties?.private)).toEqual([
-      { block: "monday-1", term: "2025-09-15/2026-01-30" },
-      { block: "monday-3", term: "2025-09-15/2026-01-30" },
-      { block: "monday-4", term: "2025-09-15/2026-01-30" },
-      { block: "monday-5", term: "2025-09-15/2026-01-30" },
-      { block: "tuesday-1", term: "2025-09-15/2026-01-30" },
-      { block: "tuesday-3", term: "2025-09-15/2026-01-30" },
-      { block: "wednesday-1", term: "2025-09-15/2026-01-30" },
-      { block: "wednesday-3", term: "2025-09-15/2026-01-30" },
-      { block: "thursday-1", term: "2025-09-15/2026-01-30" },
-      { block: "thursday-2", term: "2025-09-15/2026-01-30" },
-      { block: "friday-2", term: "2025-09-15/2026-01-30" },
+    // A Block is identified by its weekday and the Slot its run begins at
+    // (ADR-0006), which is what a re-run matches its events on.
+    expect(published(run).map((event) => event.extendedProperties?.private?.block)).toEqual([
+      "monday-1",
+      "monday-3",
+      "monday-4",
+      "monday-5",
+      "tuesday-1",
+      "tuesday-3",
+      "wednesday-1",
+      "wednesday-3",
+      "thursday-1",
+      "thursday-2",
+      "friday-2",
     ]);
+  });
+
+  test("each one names the pipeline and the Term it belongs to", async () => {
+    const run = await publish();
+
+    // The pipeline's own mark is what a listing filters on, so that a run finds
+    // its own events and never an operator's. The Term is identified by the
+    // dates it is in force over rather than by Config's label for it: the label
+    // is a display choice, and an event should not be swept and rebuilt because
+    // the school reworded it.
+    for (const event of published(run)) {
+      expect(event.extendedProperties?.private).toMatchObject({
+        publishedBy: "school-schedule",
+        term: "2025-09-15/2026-01-30",
+      });
+    }
   });
 });
 
@@ -293,7 +308,7 @@ describe("the run as an operator sees it", () => {
   test("the summary describes the calendar alongside the sheet, before anything is asked", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
 
-    const run = await runCli(["apply", root], { sheets: spreadsheet(), confirm: true });
+    const run = await runCli(["apply", root], { sheets: schoolSpreadsheet(), confirm: true });
 
     expect(run.stdout).toContain(CALENDAR_ID);
     expect(run.stdout).toContain("11 recurring events");
@@ -307,7 +322,7 @@ describe("the run as an operator sees it", () => {
 
   test("declining leaves both Destinations alone", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     const run = await runCli(["apply", root], { sheets, confirm: false });
 
@@ -320,8 +335,10 @@ describe("the run as an operator sees it", () => {
     const run = await publish();
 
     // Naming a calendar in Config is the whole of choosing one (ADR-0004): the
-    // pipeline never lists calendars and never creates one.
+    // pipeline never lists calendars and never creates one. It reads the events
+    // on the one it was given, once, and writes what that read says it must.
     expect([...new Set(run.calendar.requests.map((request) => request.kind))]).toEqual([
+      "listEvents",
       "insertEvent",
     ]);
     for (const request of run.calendar.requests) {
@@ -329,9 +346,9 @@ describe("the run as an operator sees it", () => {
     }
   });
 
-  test("a calendar that refuses the run is reported without claiming nothing was published", async () => {
+  test("a calendar that will not be read stops the run before the sheet is written", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     const run = await runCli(["apply", root, "--yes"], {
       sheets,
@@ -342,7 +359,27 @@ describe("the run as an operator sees it", () => {
 
     expect(run.exitCode).not.toBe(0);
     expect(run.stderr).toContain("PERMISSION_DENIED");
-    // The sheet went out as one batch before the calendar was touched, so
+    // Working out what to change is a read, and it happens before either
+    // Destination is written to, so a calendar that refuses costs nothing.
+    expect(sheets.batches).toEqual([]);
+    expect(run.stderr).toMatch(/Nothing has been published/);
+  });
+
+  test("a calendar that fails partway is reported without claiming nothing was published", async () => {
+    const root = await dataRepository({ ...configFile(), ...intakeFiles() });
+    const sheets = schoolSpreadsheet();
+
+    const run = await runCli(["apply", root, "--yes"], {
+      sheets,
+      calendar: refusing(
+        "school-schedule: Google Calendar refused the request — 503 UNAVAILABLE: backend error",
+        [],
+      ),
+    });
+
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stderr).toContain("UNAVAILABLE");
+    // The sheet went out as one batch before the calendar was written to, so
     // saying nothing had been published would be a lie.
     expect(sheets.batches).toHaveLength(1);
     expect(run.stderr).not.toMatch(/Nothing has been published/);

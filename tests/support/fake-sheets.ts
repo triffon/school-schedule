@@ -5,6 +5,7 @@ import type {
   SheetsClient,
   Spreadsheet,
 } from "../../src/ports/sheets.js";
+import { SPREADSHEET_ID } from "./config.js";
 
 export type SheetsRequestRecord =
   | { kind: "getSpreadsheet"; request: GetSpreadsheetRequest }
@@ -72,4 +73,13 @@ export function fakeSheetsClient(state: FakeSheetsState = {}): FakeSheetsClient 
       tabs.push(...tabsAddedBy(request));
     },
   };
+}
+
+/**
+ * The school's spreadsheet, with whatever tabs the operator already keeps in
+ * it. The default is the one tab the fixtures assume, for a test whose subject
+ * is the calendar or the summary rather than the sheet.
+ */
+export function schoolSpreadsheet(tabs: SheetTab[] = [{ sheetId: 0, title: "Бележки" }]) {
+  return fakeSheetsClient({ spreadsheets: { [SPREADSHEET_ID]: tabs } });
 }

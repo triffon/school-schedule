@@ -2,6 +2,7 @@ import { blocksOn, type Block } from "../blocks.js";
 import type { Config } from "../config.js";
 import { slotsOf, WEEKDAYS, type Intake, type Slot, type Term } from "../intake/documents.js";
 import type { CalendarEventInput } from "../ports/calendar.js";
+import { stampOf } from "./correlation.js";
 import { firstOn, lastOn, nonSchoolDates, onWeekday, type IsoDate } from "./dates.js";
 import { excluding, weeklyUntil } from "./recurrence.js";
 
@@ -72,23 +73,8 @@ function eventOf(
     // A lesson is not the student's own commitment, so it should not read as
     // one blocking their time on the calendar it's published to.
     transparency: "transparent",
-    extendedProperties: { private: correlationOf(block, term) },
-  };
-}
-
-/**
- * What a later run correlates this event with its Block by (ADR-0006): the
- * weekday and the Slot the run begins at, and the Term the event belongs to.
- * Both are plain text, so they read in the Google UI as well as in a listing.
- *
- * The Term is identified by the dates it is in force over rather than by
- * Config's label for it: the label is a display choice, and an event already
- * published should not be swept and rebuilt because the school reworded it.
- */
-function correlationOf(block: Block, term: Term): Record<string, string> {
-  return {
-    block: `${block.weekday}-${block.firstSlot}`,
-    term: `${term.start}/${term.end}`,
+    // What a later run correlates this event with its Block by (ADR-0006).
+    extendedProperties: { private: stampOf(block, term) },
   };
 }
 

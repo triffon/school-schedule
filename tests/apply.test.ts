@@ -7,7 +7,11 @@ import {
   SPREADSHEET_ID,
 } from "./support/config.js";
 import { dataRepository } from "./support/data-repository.js";
-import { fakeSheetsClient, type FakeSheetsClient } from "./support/fake-sheets.js";
+import {
+  fakeSheetsClient,
+  schoolSpreadsheet,
+  type FakeSheetsClient,
+} from "./support/fake-sheets.js";
 import {
   intakeFiles,
   schoolDayWith,
@@ -20,11 +24,6 @@ import { runCli } from "./support/run-cli.js";
 
 /** The tab the fixture's Config names: `{class} - {term}` filled in. */
 const TAB = "5В - Учебна 2025/26 година, I срок";
-
-/** A spreadsheet the operator already keeps other things in. */
-function spreadsheet(tabs = [{ sheetId: 0, title: "Бележки" }]) {
-  return fakeSheetsClient({ spreadsheets: { [SPREADSHEET_ID]: tabs } });
-}
 
 describe("an Intake apply will not publish", () => {
   test("a Lesson in an undeclared Slot fails the run, naming the file", async () => {
@@ -138,7 +137,7 @@ describe("a Config apply cannot publish against", () => {
 describe("the weekly grid", () => {
   test("reads times down the left and weekdays across the top, one row per Slot", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     const result = await runCli(["apply", root, "--yes"], { sheets });
 
@@ -172,7 +171,7 @@ describe("the weekly grid", () => {
 
   test("the rows are as tall and the columns as wide as what they hold", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -188,7 +187,7 @@ describe("the weekly grid", () => {
 describe("a labelled Break", () => {
   test("reads as one band across every weekday no Block is spanning it in", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -221,7 +220,7 @@ describe("a labelled Break", () => {
         },
       }),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -249,7 +248,7 @@ describe("a labelled Break", () => {
         },
       }),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -274,7 +273,7 @@ describe("a labelled Break", () => {
         },
       }),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -295,7 +294,7 @@ describe("a labelled Break", () => {
         }),
       }),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -318,7 +317,7 @@ describe("a labelled Break", () => {
 describe("Blocks in the grid", () => {
   test("every merge the fixture week needs, and no other", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -355,7 +354,7 @@ describe("Blocks in the grid", () => {
         },
       }),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -403,7 +402,7 @@ describe("Blocks in the grid", () => {
         },
       }),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -416,7 +415,7 @@ describe("Blocks in the grid", () => {
 describe("the one tab the pipeline owns", () => {
   test("is created when it is not there, and nothing else in the spreadsheet is written to", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet([
+    const sheets = schoolSpreadsheet([
       { sheetId: 0, title: "Бележки" },
       { sheetId: 3, title: "Миналият срок" },
     ]);
@@ -431,7 +430,7 @@ describe("the one tab the pipeline owns", () => {
 
   test("is rewritten in place when it is already there, rather than added again", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet([
+    const sheets = schoolSpreadsheet([
       { sheetId: 0, title: "Бележки" },
       { sheetId: 7, title: TAB },
     ]);
@@ -445,7 +444,7 @@ describe("the one tab the pipeline owns", () => {
   });
 
   test("republishing a changed week reapplies the merges rather than stacking them", async () => {
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
     const first = await dataRepository({ ...configFile(), ...intakeFiles() });
 
     await runCli(["apply", first, "--yes"], { sheets });
@@ -489,7 +488,7 @@ describe("the one tab the pipeline owns", () => {
 
   test("a tab published under a previous name is left alone rather than deleted", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet([{ sheetId: 4, title: "5В — миналата година" }]);
+    const sheets = schoolSpreadsheet([{ sheetId: 4, title: "5В — миналата година" }]);
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -511,7 +510,7 @@ describe("what the school decides", () => {
       ),
       ...intakeFiles(),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -529,7 +528,7 @@ describe("what the school decides", () => {
       ...configFile(configWithDisplay({ tab: "{class} ({term})" })),
       ...intakeFiles(),
     });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -542,7 +541,7 @@ describe("what the school decides", () => {
 describe("what leaves the process", () => {
   test("the whole layout goes out as one batch, not a request per cell", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -554,7 +553,7 @@ describe("what leaves the process", () => {
 describe("the confirmation", () => {
   test("a summary of what is about to change is printed before anything is asked", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     const result = await runCli(["apply", root], { sheets, confirm: true });
 
@@ -567,7 +566,7 @@ describe("the confirmation", () => {
 
   test("nothing is written when the operator declines", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     const result = await runCli(["apply", root], { sheets, confirm: false });
 
@@ -578,7 +577,7 @@ describe("the confirmation", () => {
 
   test("the skip flag publishes without asking anything", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     const result = await runCli(["apply", root, "--yes"], { sheets });
 
@@ -589,7 +588,7 @@ describe("the confirmation", () => {
 
   test("an argument apply does not know is a usage mistake, not a silent publish", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     const result = await runCli(["apply", root, "--force"], { sheets });
 
@@ -602,7 +601,7 @@ describe("the confirmation", () => {
 describe("a grid that prints", () => {
   test("ragged days and Slots of differing duration render as themselves", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 
@@ -634,7 +633,7 @@ describe("a grid that prints", () => {
 
   test("the formatting is part of what a republish reapplies, not just the values", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
     await runCli(["apply", root, "--yes"], { sheets });
@@ -657,7 +656,7 @@ describe("a grid that prints", () => {
 
   test("the grid is ruled, with the three time columns boxed as one", async () => {
     const root = await dataRepository({ ...configFile(), ...intakeFiles() });
-    const sheets = spreadsheet();
+    const sheets = schoolSpreadsheet();
 
     await runCli(["apply", root, "--yes"], { sheets });
 

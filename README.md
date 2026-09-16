@@ -49,11 +49,10 @@ Early, and honest about it:
 | `prompt` | Works. Emits the parsing prompt for one Source. |
 | `validate` | Works. Checks a data repository's Intake, structurally and semantically. |
 | `init` | Works. Authorises against Google in the browser, once, and stores the grant. |
-| `apply` | Works. Publishes the weekly grid to a real Google spreadsheet, and the Blocks to a real Google Calendar. |
-| Calendar Destination | Built for a first publish into an empty calendar (ADR-0003, ADR-0004, ADR-0008). It does not yet reconcile: a second run publishes the week a second time. |
+| `apply` | Works. Publishes the weekly grid to a real Google spreadsheet, and the Blocks to a real Google Calendar, on a first run and on every run after. |
+| Calendar Destination | Works, and converges on re-run: correcting the Intake and running again updates what changed rather than publishing the week twice (ADR-0003, ADR-0004, ADR-0006, ADR-0008). |
 
-Nothing is published to npm yet. Converging the calendar on re-run — updating what has changed,
-deleting what has gone and sweeping a previous Term — is the next piece of work.
+Nothing is published to npm yet.
 
 ## Getting started
 
@@ -221,12 +220,25 @@ occurrence of that weekday, and with an exclusion for every Non-school day falli
 holidays read as free. Times are wall-clock in `timezone`, which is what carries a lesson across
 a daylight-saving change unmoved. Reminders are turned off explicitly rather than left to the
 account default, which would notify before every lesson dozens of times a week. Each event
-carries private extended properties naming its Block and its Term, which is what a later run
-will correlate on (**ADR-0006**).
+carries private extended properties saying it is the pipeline's own and naming its Block and its
+Term, which is what a later run correlates on (**ADR-0006**).
+
+Run it again and the calendar converges on the Intake rather than gaining a second copy of the
+week: correcting a mistyped subject is a one-line edit and a re-run. It reads the events it
+published before — one listing, and one that returns nothing you made yourself — then adds the
+Blocks that are new, updates the events that no longer say what the Intake says, and deletes the
+ones whose Block has gone or whose Term has passed, so that publishing a new Term to the same
+calendar does not stack it on top of the last. An Intake nobody has touched costs that one read
+and not a single write. The summary counts what will be added, updated and deleted before it
+asks. An event you edited in the Google UI is overwritten, and one instance you moved is not
+detected: the calendar is a projection of the Intake, not a workspace (**ADR-0003**). Events left
+by a run older than this one carry no mark, so no listing returns them and no run will clear
+them: delete those by hand once, and what follows converges from there.
 
 The spreadsheet goes out first, as one batch that Sheets applies whole or not at all; the
 calendar is then written an event at a time, and a run that fails partway says so rather than
-claiming nothing was published.
+claiming nothing was published. Both halves are read before either is written, so a Destination
+that refuses the run costs nothing.
 
 ```sh
 school-schedule apply data           # summarises, then asks

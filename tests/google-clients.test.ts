@@ -152,14 +152,14 @@ describe("the Calendar client", () => {
 
     await googleCalendarClient(granting(), { fetch: fetching }).listEvents({
       calendarId: "school@group.calendar.google.com",
-      privateExtendedProperty: "term=2025/26-1",
+      privateExtendedProperty: "publishedBy=school-schedule",
     });
 
     const url = new URL(fetching.calls[0]!.url);
     expect(url.pathname).toBe(
       "/calendar/v3/calendars/school%40group.calendar.google.com/events",
     );
-    expect(url.searchParams.get("privateExtendedProperty")).toBe("term=2025/26-1");
+    expect(url.searchParams.get("privateExtendedProperty")).toBe("publishedBy=school-schedule");
     // Recurring events are published and reconciled whole, never as instances.
     expect(url.searchParams.get("singleEvents")).toBe("false");
   });

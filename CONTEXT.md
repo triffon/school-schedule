@@ -69,3 +69,7 @@ _Avoid_: Settings, options, profile
 **Destination**:
 A place the Timetable is published to. Currently Google Sheets and Google Calendar.
 _Avoid_: Output, target, sink
+
+**Reconciliation**:
+What makes a re-run converge the calendar on the Intake rather than publish the week a second time: reading the events the pipeline published there before, then inserting what is new, updating what has changed, and deleting what the Timetable no longer has or a previous Term left behind. An unchanged Intake reconciles to no writes at all.
+_Avoid_: Sync, diff, upsert, merge
