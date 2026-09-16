@@ -17,6 +17,11 @@ import { readJsonFile, type JsonFile } from "./json-file.js";
  */
 export interface Config {
   timezone: string;
+  /**
+   * The one calendar published to, copied out of Google Calendar's own settings
+   * (ADR-0004). The pipeline neither creates nor offers calendars, so naming one
+   * here is the whole of choosing it.
+   */
   calendarId: string;
   spreadsheetId: string;
   display: Display;
@@ -99,9 +104,7 @@ export async function readConfig(dataRepository: string): Promise<ConfigReading>
 
   const config: Config = {
     timezone: stringOr(root?.["timezone"], "timezone", DEFAULT_TIMEZONE, problems),
-    // `init` writes this one, and the rules about which calendars may be
-    // published to are the Calendar Destination's, not this reader's.
-    calendarId: stringOr(root?.["calendarId"], "calendarId", "", problems),
+    calendarId: required(root?.["calendarId"], "calendarId", problems),
     spreadsheetId: required(root?.["spreadsheetId"], "spreadsheetId", problems),
     display: {
       class: required(display?.["class"], "display.class", problems),

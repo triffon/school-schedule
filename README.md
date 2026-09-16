@@ -52,8 +52,8 @@ Early, and honest about it:
 | `apply` | Works. Publishes the weekly grid to a real Google spreadsheet. |
 | Calendar Destination | Designed (ADR-0003, ADR-0004, ADR-0006), not built. Its scope is granted, and nothing uses it yet. |
 
-Nothing is published to npm yet. Choosing the calendar to publish to — and the refusals that
-bound what the granted scope may reach — is the next piece of work.
+Nothing is published to npm yet. Writing Blocks to the calendar `config.json` names is the next
+piece of work.
 
 ## Getting started
 
@@ -118,6 +118,12 @@ token.json                      # what init was granted — never committed
 }
 ```
 
+`calendarId` is the calendar published to, and naming it here is the whole of choosing it: the
+pipeline neither creates calendars nor offers you a list of your own (**ADR-0004**). Make the
+calendar in Google Calendar by hand, then copy its ID out of *Settings → Integrate calendar*.
+Nothing checks which calendar you named, and publishing deletes events it does not recognise, so
+name one that is the school's and nothing else.
+
 Each weekday names itself as the Intake does and carries the header it is rendered under, so
 which weekdays get a column, in what order and with what capitalisation is the school's choice
 rather than a locale's.
@@ -163,9 +169,12 @@ grant or a withheld scope is repaired.
 school-schedule init data
 ```
 
-Both scopes are asked for at once — `spreadsheets` and the full `calendar` (**ADR-0004**) — so
-that adopting the Calendar Destination later costs no second consent screen. A run needing a
-scope the stored grant does not carry is refused before anything is sent, naming the scope.
+Both scopes are asked for at once — `spreadsheets` and `calendar.events` (**ADR-0004**) — so
+that adopting the Calendar Destination later costs no second consent screen. The Calendar scope
+is the events one rather than the full `calendar`, because the calendar published to is named in
+Config rather than created or picked here, so the grant carries no power to create, delete or
+re-configure a calendar. A run needing a scope the stored grant does not carry is refused before
+anything is sent, naming the scope.
 
 It authorises as an **OAuth client of your own**: an OAuth 2.0 Client ID of type *Desktop app*,
 registered in a Google Cloud project with the Sheets and Calendar APIs enabled, downloaded from
@@ -240,7 +249,7 @@ for rejection, are in [`docs/adr/`](docs/adr/):
 | [0001](docs/adr/0001-agent-parses-sources-not-code.md) | Parsing Sources is delegated to an agent, not to code |
 | [0002](docs/adr/0002-three-repository-split.md) | Pipeline, Parsing Skills and school data live in three repositories |
 | [0003](docs/adr/0003-recurring-events-not-dated-instances.md) | The Calendar is written as recurring events, not dated instances |
-| [0004](docs/adr/0004-full-calendar-scope-with-primary-refusal.md) | Full `calendar` scope, guarded by a primary-calendar refusal |
+| [0004](docs/adr/0004-calendar-named-in-config-with-events-scope.md) | The calendar is named in Config, and access is the `calendar.events` scope |
 | [0005](docs/adr/0005-typescript-on-node.md) | TypeScript on Node |
 | [0006](docs/adr/0006-correlate-events-by-extended-properties.md) | Events are correlated by extended properties, not by client-specified IDs |
 | [0007](docs/adr/0007-generate-sheet-layout-rather-than-fill-a-template.md) | The sheet layout is generated, not filled into a pre-formatted tab |

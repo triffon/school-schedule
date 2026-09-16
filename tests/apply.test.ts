@@ -82,6 +82,19 @@ describe("a Config apply cannot publish against", () => {
     expect(result.sheets.requests).toEqual([]);
   });
 
+  test("a Config naming no calendar fails: naming one is the whole of choosing it", async () => {
+    const root = await dataRepository({
+      ...configFile({ ...config, calendarId: "" }),
+      ...intakeFiles(),
+    });
+
+    const result = await runCli(["apply", root]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("calendarId");
+    expect(result.sheets.requests).toEqual([]);
+  });
+
   test("a Config with no weekday to render fails, saying what was expected", async () => {
     const root = await dataRepository({
       ...configFile(configWithDisplay({ weekdays: [] })),
