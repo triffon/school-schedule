@@ -106,8 +106,8 @@ function cellData(cell: Cell): Record<string, unknown> {
  * cell is centred horizontally.
  *
  * Vertically they differ, and deliberately: a Slot row is two lines tall, so a
- * subject sits in the middle of the cell the Block merged, while its times hang
- * from the top of the row they belong to and a heading sits on the line the
+ * subject sits in the middle of the cell the Block merged, its time sits in
+ * the middle of the row it belongs to, and a heading sits on the line the
  * grid starts at.
  */
 const CENTRED = { horizontalAlignment: "CENTER" } as const;
@@ -125,7 +125,7 @@ const FORMATS: Record<CellRole, Record<string, unknown>> = {
   // height, so it is told no more than what it is.
   spacer: { verticalAlignment: "BOTTOM", textFormat: { bold: true, fontSize: 11 } },
   header: { ...HEADING, backgroundColor: HEADER_GREY, textFormat: { bold: true, fontSize: 11 } },
-  time: { ...FROM_THE_TOP, textFormat: { bold: true, fontSize: 11 } },
+  time: { ...CENTRED, verticalAlignment: "MIDDLE", textFormat: { bold: true, fontSize: 11 } },
   // A subject is the one thing here that can outgrow its column.
   subject: {
     ...CENTRED,
