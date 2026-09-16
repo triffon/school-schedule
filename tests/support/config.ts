@@ -7,9 +7,11 @@ export const CONFIG_FILE = "config.json";
 
 export const SPREADSHEET_ID = "spreadsheet-of-the-school";
 
+export const CALENDAR_ID = "school@group.calendar.google.com";
+
 export const config = {
   timezone: "Europe/Sofia",
-  calendarId: "school@group.calendar.google.com",
+  calendarId: CALENDAR_ID,
   spreadsheetId: SPREADSHEET_ID,
   display: {
     class: "5В",

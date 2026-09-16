@@ -49,11 +49,11 @@ Early, and honest about it:
 | `prompt` | Works. Emits the parsing prompt for one Source. |
 | `validate` | Works. Checks a data repository's Intake, structurally and semantically. |
 | `init` | Works. Authorises against Google in the browser, once, and stores the grant. |
-| `apply` | Works. Publishes the weekly grid to a real Google spreadsheet. |
-| Calendar Destination | Designed (ADR-0003, ADR-0004, ADR-0006), not built. Its scope is granted, and nothing uses it yet. |
+| `apply` | Works. Publishes the weekly grid to a real Google spreadsheet, and the Blocks to a real Google Calendar. |
+| Calendar Destination | Built for a first publish into an empty calendar (ADR-0003, ADR-0004, ADR-0008). It does not yet reconcile: a second run publishes the week a second time. |
 
-Nothing is published to npm yet. Writing Blocks to the calendar `config.json` names is the next
-piece of work.
+Nothing is published to npm yet. Converging the calendar on re-run — updating what has changed,
+deleting what has gone and sweeping a previous Term — is the next piece of work.
 
 ## Getting started
 
@@ -121,8 +121,8 @@ token.json                      # what init was granted — never committed
 `calendarId` is the calendar published to, and naming it here is the whole of choosing it: the
 pipeline neither creates calendars nor offers you a list of your own (**ADR-0004**). Make the
 calendar in Google Calendar by hand, then copy its ID out of *Settings → Integrate calendar*.
-Nothing checks which calendar you named, and publishing deletes events it does not recognise, so
-name one that is the school's and nothing else.
+Nothing checks which calendar you named, and reconciliation will delete events it does not
+recognise, so name one that is the school's and nothing else.
 
 Each weekday names itself as the Intake does and carries the header it is rendered under, so
 which weekdays get a column, in what order and with what capitalisation is the school's choice
@@ -214,6 +214,19 @@ batch, which is what the Sheets quota counts.
 A labelled Break gets a row of its own, shaded and captioned, across every weekday no Block is
 spanning it in — one band over the whole width, time columns included, where the week shares it.
 An unlabelled one gets no row, having nothing to say that the Slot times either side of it do not.
+
+It writes the same Blocks to the calendar `calendarId` names as one recurring event each
+(**ADR-0003**): titled with the subject and nothing else, repeating weekly until the Term's last
+occurrence of that weekday, and with an exclusion for every Non-school day falling on it, so the
+holidays read as free. Times are wall-clock in `timezone`, which is what carries a lesson across
+a daylight-saving change unmoved. Reminders are turned off explicitly rather than left to the
+account default, which would notify before every lesson dozens of times a week. Each event
+carries private extended properties naming its Block and its Term, which is what a later run
+will correlate on (**ADR-0006**).
+
+The spreadsheet goes out first, as one batch that Sheets applies whole or not at all; the
+calendar is then written an event at a time, and a run that fails partway says so rather than
+claiming nothing was published.
 
 ```sh
 school-schedule apply data           # summarises, then asks
