@@ -203,8 +203,8 @@ ruling, shading, column widths and row heights as well as values — and goes ou
 batch, which is what the Sheets quota counts.
 
 A labelled Break gets a row of its own, shaded and captioned, across every weekday no Block is
-spanning it in; an unlabelled one gets none, having nothing to say that the Slot times either
-side of it do not.
+spanning it in — one band over the whole width, time columns included, where the week shares it.
+An unlabelled one gets no row, having nothing to say that the Slot times either side of it do not.
 
 ```sh
 school-schedule apply data           # summarises, then asks

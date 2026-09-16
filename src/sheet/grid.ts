@@ -262,22 +262,37 @@ function rectangle(column: number) {
 }
 
 /**
- * A Break row's own merges: each run of weekday columns no Block is spanning
- * becomes one cell, so that the band reads unbroken rather than as a row of
- * separate boxes. The label goes in the first such run, which is why the runs
- * are merged even where they hold nothing.
+ * The bands a labelled Break row reads as: one per run of weekday columns no
+ * Block is spanning, each carrying the label in the cell a merge would keep,
+ * which is its first.
+ *
+ * Where no weekday is spanned there is a single run, and it reaches leftwards
+ * over the time columns as well: a Break the whole week shares is one band
+ * across the sheet rather than one that starts under Monday. This is the only
+ * thing ever written in a Break row's time columns, which otherwise stay empty
+ * — the Slots above and below already say when the Break runs.
+ */
+function breakBands(index: number, columns: WeekdayColumn[]): Rectangle[] {
+  const acrossTheWeek = columns.every((column) => column.spanned[index] !== true);
+
+  return freeRuns(index, columns).map((run) => ({
+    firstRow: HEADING_ROWS + index,
+    lastRow: HEADING_ROWS + index,
+    firstColumn: acrossTheWeek ? 0 : TIME_COLUMNS + run.first,
+    lastColumn: TIME_COLUMNS + run.last,
+  }));
+}
+
+/**
+ * A Break row's own merges: every band of more than one column becomes one
+ * cell, so that it reads unbroken rather than as a row of separate boxes. A
+ * band of a single weekday is left alone — there is nothing to merge it with,
+ * and merging it with its neighbour would join it to a column a Block spans.
  */
 function breakMerges(row: BodyRow, index: number, columns: WeekdayColumn[]): Rectangle[] {
   if (row.kind !== "break") return [];
 
-  return freeRuns(index, columns)
-    .filter((run) => run.last > run.first)
-    .map((run) => ({
-      firstRow: HEADING_ROWS + index,
-      lastRow: HEADING_ROWS + index,
-      firstColumn: TIME_COLUMNS + run.first,
-      lastColumn: TIME_COLUMNS + run.last,
-    }));
+  return breakBands(index, columns).filter((band) => band.lastColumn > band.firstColumn);
 }
 
 /**
@@ -325,10 +340,11 @@ function slotRow(slot: Slot, weekdays: string[]): Cell[] {
 }
 
 /**
- * A labelled Break's row: a band with the label in it, and no times, because
- * the Slots above and below it already say when it runs. Where every weekday is
- * spanned by a Block the label has nowhere to go and is not rendered at all,
- * which follows from rendering the band per column (ADR-0008).
+ * A labelled Break's row: its bands, each with the label in it, and no times,
+ * because the Slots above and below it already say when it runs. Where every
+ * weekday is spanned by a Block there is no band, so the label has nowhere to
+ * go and is not rendered at all, which follows from rendering it per column
+ * (ADR-0008).
  */
 function breakRow(
   row: { label: string },
@@ -336,27 +352,22 @@ function breakRow(
   rows: number,
   columns: WeekdayColumn[],
 ): Cell[] {
-  const last = columns.length - 1;
-  const labelled = freeRuns(index, columns)[0]?.first;
+  const width = TIME_COLUMNS + columns.length;
+  const labelled = new Set(breakBands(index, columns).map((band) => band.firstColumn));
+
   // The band carries no lines of its own — only whatever part of the table's
   // own frame it happens to sit on, which is its left and right edge, and its
   // bottom when no Slot row follows to draw one.
-  const frame = (side: Partial<Edges>): Edges => ({
-    ...unruled(),
-    ...side,
-    bottom: index === rows - 1,
-  });
-
-  return [
-    { text: "", role: "break", edges: frame({ left: true }) },
-    { text: "", role: "break", edges: frame({}) },
-    { text: "", role: "break", edges: frame({}) },
-    ...columns.map((_, at) => ({
-      text: at === labelled ? row.label : "",
-      role: "break" as const,
-      edges: frame(at === last ? { right: true } : {}),
-    })),
-  ];
+  return Array.from({ length: width }, (_, at) => ({
+    text: labelled.has(at) ? row.label : "",
+    role: "break" as const,
+    edges: {
+      ...unruled(),
+      left: at === 0,
+      right: at === width - 1,
+      bottom: index === rows - 1,
+    },
+  }));
 }
 
 /**
