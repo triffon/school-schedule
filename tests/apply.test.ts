@@ -8,12 +8,18 @@ import {
 } from "./support/config.js";
 import { dataRepository } from "./support/data-repository.js";
 import { fakeSheetsClient, type FakeSheetsClient } from "./support/fake-sheets.js";
-import { intakeFiles, TIMETABLE_FILE, timetable } from "./support/intake.js";
+import {
+  intakeFiles,
+  schoolDayWith,
+  SCHOOL_DAY_FILE,
+  TIMETABLE_FILE,
+  timetable,
+} from "./support/intake.js";
 import { formatAt, renderedTab, renderedTabs } from "./support/rendered-sheet.js";
 import { runCli } from "./support/run-cli.js";
 
-/** The tab the fixture's Config names: `{class} — {term}` filled in. */
-const TAB = "5В — Учебна 2025/26 година, I срок";
+/** The tab the fixture's Config names: `{class} - {term}` filled in. */
+const TAB = "5В - Учебна 2025/26 година, I срок";
 
 /** A spreadsheet the operator already keeps other things in. */
 function spreadsheet(tabs = [{ sheetId: 0, title: "Бележки" }]) {
@@ -127,6 +133,8 @@ describe("the weekly grid", () => {
     expect(renderedTab(sheets, SPREADSHEET_ID, TAB).values).toEqual([
       ["5В", "", "", "", "", "", "", ""],
       ["Учебна 2025/26 година, I срок", "", "", "", "", "", "", ""],
+      // A blank row sets the heading off from the grid.
+      ["", "", "", "", "", "", "", ""],
       ["", "", "", "Понеделник", "Вторник", "Сряда", "Четвъртък", "Петък"],
       [
         "08:00",
@@ -139,9 +147,124 @@ describe("the weekly grid", () => {
         "",
       ],
       ["08:50", "–", "09:30", "", "", "", "Технологии", "Изобразително изкуство"],
+      // The one labelled Break of the fixture's day; the unlabelled ones have
+      // nothing to say that the times either side of them do not.
+      ["", "", "", "голямо междучасие", "", "", "", ""],
       ["09:50", "–", "10:30", "Български език", "Английски език", "История", "", ""],
       ["10:40", "–", "11:10", "Физическо възпитание", "", "", "", ""],
       ["11:20", "–", "11:50", "Музика", "", "", "", ""],
+    ]);
+  });
+
+  test("the rows are as tall and the columns as wide as what they hold", async () => {
+    const root = await dataRepository({ ...configFile(), ...intakeFiles() });
+    const sheets = spreadsheet();
+
+    await runCli(["apply", root, "--yes"], { sheets });
+
+    const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
+    expect(tab.columnWidths).toEqual([43, 15, 43, 176, 176, 176, 176, 176]);
+    // The two title rows are left as tall as their own text — how tall 14pt
+    // Arial stands is Google's business. Then the blank row, the headers, a
+    // Slot row two lines tall for each Slot, and one line for the Break.
+    expect(tab.rowHeights).toEqual(["fit", "fit", 41, 21, 42, 42, 21, 42, 42, 42]);
+  });
+});
+
+describe("a labelled Break", () => {
+  test("reads as one band across every weekday no Block is spanning it in", async () => {
+    const root = await dataRepository({ ...configFile(), ...intakeFiles() });
+    const sheets = spreadsheet();
+
+    await runCli(["apply", root, "--yes"], { sheets });
+
+    const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
+    // No weekday teaches across this Break, so the band runs the whole width.
+    expect(tab.merges).toContain("D7:H7");
+    expect(formatAt(tab, "D7")).toMatchObject({ textFormat: { italic: true } });
+    // It carries no lines of its own, only the frame it sits on.
+    expect(formatAt(tab, "A7")).toMatchObject({ borders: { left: expect.anything() } });
+    expect(formatAt(tab, "E7")).not.toHaveProperty("borders");
+  });
+
+  test("is swallowed where a Block spans it, and the band picks up after", async () => {
+    const root = await dataRepository({
+      ...configFile(),
+      ...intakeFiles({
+        [TIMETABLE_FILE]: {
+          ...timetable,
+          lessons: [
+            // Monday teaches the same subject either side of the labelled
+            // Break, so its merged cell covers the Break row.
+            { weekday: "monday", slot: 2, subject: "Математика" },
+            { weekday: "monday", slot: 3, subject: "Математика" },
+            { weekday: "tuesday", slot: 2, subject: "История" },
+          ],
+        },
+      }),
+    });
+    const sheets = spreadsheet();
+
+    await runCli(["apply", root, "--yes"], { sheets });
+
+    const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
+    // Monday's Математика runs from the 08:50 row through the Break row to the
+    // 09:50 one; the band is left to the four weekdays either side of it.
+    expect(tab.merges).toContain("D6:D8");
+    expect(tab.merges).toContain("E7:H7");
+    expect(tab.values[6]).toEqual(["", "", "", "", "голямо междучасие", "", "", ""]);
+  });
+
+  test("shows nowhere at all when every weekday teaches across it", async () => {
+    const root = await dataRepository({
+      ...configFile(),
+      ...intakeFiles({
+        [TIMETABLE_FILE]: {
+          ...timetable,
+          lessons: config.display.weekdays.flatMap(({ weekday }) => [
+            { weekday, slot: 2, subject: "Химия" },
+            { weekday, slot: 3, subject: "Химия" },
+          ]),
+        },
+      }),
+    });
+    const sheets = spreadsheet();
+
+    await runCli(["apply", root, "--yes"], { sheets });
+
+    const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
+    // The row is still there — it is what the five merged cells run through —
+    // but no column is free to write the label in (ADR-0008).
+    expect(tab.values[6]).toEqual(["", "", "", "", "", "", "", ""]);
+    expect(tab.merges).toContain("D6:D8");
+    expect(tab.merges).toContain("H6:H8");
+  });
+
+  test("an unlabelled Break gets no row of its own", async () => {
+    const root = await dataRepository({
+      ...configFile(),
+      ...intakeFiles({
+        [SCHOOL_DAY_FILE]: schoolDayWith({
+          3: { kind: "break", start: "09:30", end: "09:50" },
+        }),
+      }),
+    });
+    const sheets = spreadsheet();
+
+    await runCli(["apply", root, "--yes"], { sheets });
+
+    const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
+    expect(tab.values).toHaveLength(9);
+    expect(tab.values.map((row) => row[0])).toEqual([
+      "5В",
+      "Учебна 2025/26 година, I срок",
+      "",
+      "",
+      "08:00",
+      "08:50",
+      "09:50",
+      "10:40",
+      "11:20",
     ]);
   });
 });
@@ -158,14 +281,16 @@ describe("Blocks in the grid", () => {
       "A1:H1",
       "A2:H2",
       // Monday's double Математика, and Tuesday's double Български език.
-      "D4:D5",
-      "E4:E5",
+      "D5:D6",
+      "E5:E6",
       // Tuesday ends after three Slots; the rest of the column is one gap.
-      "E7:E8",
-      // Wednesday's История spans the 09:30 Break and the 10:30 one.
-      "F6:F7",
-      "G6:G8",
-      "H6:H8",
+      "E9:E10",
+      // Wednesday's История spans the 10:30 Break, which has no row of its own.
+      "F8:F9",
+      "G8:G10",
+      "H8:H10",
+      // The labelled Break's band, across every weekday, made last.
+      "D7:H7",
     ]);
   });
 
@@ -188,14 +313,35 @@ describe("Blocks in the grid", () => {
     await runCli(["apply", root, "--yes"], { sheets });
 
     const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
-    expect(tab.values.slice(3).map((row) => row[3])).toEqual([
+    // The Break row sits between the second Математика and the third, and the
+    // run is broken by История in any case.
+    expect(tab.values.slice(4).map((row) => row[3])).toEqual([
       "Математика",
       "История",
+      // Monday teaches nothing across the Break, so the band — and its label —
+      // starts in Monday's own column.
+      "голямо междучасие",
       "Математика",
       "",
       "",
     ]);
-    expect(tab.merges).toEqual(["A1:H1", "A2:H2", "D7:D8", "E4:E8", "F4:F8", "G4:G8", "H4:H8"]);
+    expect(tab.merges).toEqual([
+      "A1:H1",
+      "A2:H2",
+      // Monday's last two Slots are one gap; the Break above them is not part
+      // of it, so the band still reads across.
+      "D9:D10",
+      // Every other weekday is empty, and its gap stops at the Break row.
+      "E5:E6",
+      "E8:E10",
+      "F5:F6",
+      "F8:F10",
+      "G5:G6",
+      "G8:G10",
+      "H5:H6",
+      "H8:H10",
+      "D7:H7",
+    ]);
   });
 
   test("a Slot no weekday teaches in still gets a row of its own", async () => {
@@ -213,8 +359,8 @@ describe("Blocks in the grid", () => {
     await runCli(["apply", root, "--yes"], { sheets });
 
     const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
-    expect(tab.values).toHaveLength(8);
-    expect(tab.values[7]).toEqual(["11:20", "–", "11:50", "", "", "", "", ""]);
+    expect(tab.values).toHaveLength(10);
+    expect(tab.values[9]).toEqual(["11:20", "–", "11:50", "", "", "", "", ""]);
   });
 });
 
@@ -272,8 +418,24 @@ describe("the one tab the pipeline owns", () => {
     await runCli(["apply", second, "--yes"], { sheets });
 
     const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
-    expect(tab.merges).toEqual(["A1:H1", "A2:H2", "D4:D6", "D7:D8", "E4:E8", "F4:F8", "G4:G8", "H4:H8"]);
-    expect(tab.values[3]?.[3]).toBe("Химия");
+    expect(tab.merges).toEqual([
+      "A1:H1",
+      "A2:H2",
+      // Химия runs through the labelled Break and swallows its row.
+      "D5:D8",
+      "D9:D10",
+      "E5:E6",
+      "E8:E10",
+      "F5:F6",
+      "F8:F10",
+      "G5:G6",
+      "G8:G10",
+      "H5:H6",
+      "H8:H10",
+      // Monday is spanned, so the band starts at Tuesday.
+      "E7:H7",
+    ]);
+    expect(tab.values[4]?.[3]).toBe("Химия");
   });
 
   test("a tab published under a previous name is left alone rather than deleted", async () => {
@@ -305,12 +467,12 @@ describe("what the school decides", () => {
     await runCli(["apply", root, "--yes"], { sheets });
 
     const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
-    expect(tab.values[2]).toEqual(["", "", "", "ПЕТЪК", "ПОНЕДЕЛНИК"]);
+    expect(tab.values[3]).toEqual(["", "", "", "ПЕТЪК", "ПОНЕДЕЛНИК"]);
     // Monday's Математика covers both of the first two Slots, so it is written
     // once, in the row the merge keeps; Friday teaches nothing until the second.
-    expect(tab.values[3]).toEqual(["08:00", "–", "08:40", "", "Математика"]);
-    expect(tab.values[4]).toEqual(["08:50", "–", "09:30", "Изобразително изкуство", ""]);
-    expect(tab.columnWidths).toEqual([64, 24, 64, 220, 220]);
+    expect(tab.values[4]).toEqual(["08:00", "–", "08:40", "", "Математика"]);
+    expect(tab.values[5]).toEqual(["08:50", "–", "09:30", "Изобразително изкуство", ""]);
+    expect(tab.columnWidths).toEqual([43, 15, 43, 220, 220]);
   });
 
   test("the tab is named by the Config template, with the Class and the Term filled in", async () => {
@@ -397,24 +559,28 @@ describe("a grid that prints", () => {
 
     const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
     // The first three Slots are 40 minutes long and the last two 30, and each
-    // row carries the times of its own Slot rather than a computed stride.
-    expect(tab.values.slice(3).map((row) => `${row[0]}${row[1]}${row[2]}`)).toEqual([
+    // row carries the times of its own Slot rather than a computed stride. The
+    // Break row carries none: the Slots either side of it already say when it
+    // runs.
+    expect(tab.values.slice(4).map((row) => `${row[0]}${row[1]}${row[2]}`)).toEqual([
       "08:00–08:40",
       "08:50–09:30",
+      "",
       "09:50–10:30",
       "10:40–11:10",
       "11:20–11:50",
     ]);
     // Tuesday stops after three Slots and Thursday after two; neither shortens
     // its column, and Monday still runs the full five.
-    expect(tab.values.slice(3).map((row) => row[4])).toEqual([
+    expect(tab.values.slice(4).map((row) => row[4])).toEqual([
       "Български език",
+      "",
       "",
       "Английски език",
       "",
       "",
     ]);
-    expect(tab.values[7]?.[3]).toBe("Музика");
+    expect(tab.values[9]?.[3]).toBe("Музика");
   });
 
   test("the formatting is part of what a republish reapplies, not just the values", async () => {
@@ -427,13 +593,42 @@ describe("a grid that prints", () => {
     const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
     expect(formatAt(tab, "A1")).toEqual({
       horizontalAlignment: "CENTER",
-      verticalAlignment: "MIDDLE",
+      verticalAlignment: "BOTTOM",
       textFormat: { bold: true, fontSize: 14 },
     });
-    expect(formatAt(tab, "D3")).toMatchObject({ textFormat: { bold: true } });
+    // The weekday headers stand out from the grid by their shading.
+    expect(formatAt(tab, "D4")).toMatchObject({
+      textFormat: { bold: true },
+      backgroundColor: { red: 217 / 255, green: 217 / 255, blue: 217 / 255 },
+    });
     // A subject is the one thing that can outgrow its column.
-    expect(formatAt(tab, "D4")).toMatchObject({ wrapStrategy: "WRAP" });
-    expect(formatAt(tab, "A4")).not.toMatchObject({ wrapStrategy: "WRAP" });
+    expect(formatAt(tab, "D5")).toMatchObject({ wrapStrategy: "WRAP" });
+    expect(formatAt(tab, "A5")).not.toMatchObject({ wrapStrategy: "WRAP" });
+  });
+
+  test("the grid is ruled, with the three time columns boxed as one", async () => {
+    const root = await dataRepository({ ...configFile(), ...intakeFiles() });
+    const sheets = spreadsheet();
+
+    await runCli(["apply", root, "--yes"], { sheets });
+
+    const tab = renderedTab(sheets, SPREADSHEET_ID, TAB);
+    const rule = { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } };
+
+    // `08:00 – 08:40` reads as one time, so no line runs between its cells.
+    expect(formatAt(tab, "A5")).toMatchObject({
+      borders: { top: rule, bottom: rule, left: rule },
+    });
+    expect(formatAt(tab, "A5")).not.toHaveProperty("borders.right");
+    expect(formatAt(tab, "B5")).not.toHaveProperty("borders.left");
+    expect(formatAt(tab, "C5")).toMatchObject({ borders: { right: rule } });
+    // A subject cell is boxed on all four sides.
+    expect(formatAt(tab, "D5")).toMatchObject({
+      borders: { top: rule, right: rule, bottom: rule, left: rule },
+    });
+    // The heading above the grid carries no lines at all.
+    expect(formatAt(tab, "A1")).not.toHaveProperty("borders");
+    expect(formatAt(tab, "A3")).not.toHaveProperty("borders");
   });
 });
 

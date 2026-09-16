@@ -1,5 +1,5 @@
 import type { SheetsRequest } from "../ports/sheets.js";
-import type { Cell, CellRole, Grid, Rectangle } from "./grid.js";
+import type { Cell, CellRole, Edges, Grid, Rectangle, RowHeight } from "./grid.js";
 
 /**
  * How Google is told to draw the grid: one batch of requests that regenerates
@@ -33,13 +33,8 @@ export function layoutRequests(grid: Grid, tab: TargetTab): SheetsRequest[] {
         fields: "userEnteredValue,userEnteredFormat",
       },
     },
-    ...grid.columnWidths.map((pixels, column) => ({
-      updateDimensionProperties: {
-        range: { sheetId: tab.sheetId, dimension: "COLUMNS", startIndex: column, endIndex: column + 1 },
-        properties: { pixelSize: pixels },
-        fields: "pixelSize",
-      },
-    })),
+    ...grid.columnWidths.map(pinned(tab.sheetId, "COLUMNS")),
+    ...rowHeightRequests(grid.rowHeights, tab.sheetId),
     ...grid.merges.map((rectangle) => ({
       mergeCells: { range: range(tab.sheetId, rectangle), mergeType: "MERGE_ALL" },
     })),
@@ -69,26 +64,92 @@ function range(sheetId: number, rectangle: Rectangle): Record<string, number> {
   };
 }
 
+/** One column's width or one row's height, pinned to a number of pixels. */
+function pinned(sheetId: number, dimension: "COLUMNS" | "ROWS") {
+  return (pixels: number, index: number): SheetsRequest => ({
+    updateDimensionProperties: {
+      range: { sheetId, dimension, startIndex: index, endIndex: index + 1 },
+      properties: { pixelSize: pixels },
+      fields: "pixelSize",
+    },
+  });
+}
+
+/**
+ * The row heights. A pinned row is given its pixel count; a `fit` row is handed
+ * to Sheets to size, which is both how it ends up as tall as its own text and
+ * how a height pinned by a previous run is undone — setting a pixel size makes
+ * a row manually sized, and only an auto-resize takes that back (ADR-0007).
+ */
+function rowHeightRequests(heights: RowHeight[], sheetId: number): SheetsRequest[] {
+  return heights.map((height, index) =>
+    height === "fit"
+      ? {
+          autoResizeDimensions: {
+            dimensions: { sheetId, dimension: "ROWS", startIndex: index, endIndex: index + 1 },
+          },
+        }
+      : pinned(sheetId, "ROWS")(height, index),
+  );
+}
+
 function cellData(cell: Cell): Record<string, unknown> {
   return {
     userEnteredValue: { stringValue: cell.text },
-    userEnteredFormat: FORMATS[cell.role],
+    userEnteredFormat: { ...FORMATS[cell.role], ...ruling(cell.edges) },
   };
 }
 
 /**
  * How each kind of cell is drawn. A printed copy has to identify itself and
  * read across a room, so the Class is the largest thing on the page and every
- * cell is centred in its own — subjects vertically too, since a merged cell is
- * as tall as the Block it covers.
+ * cell is centred horizontally.
+ *
+ * Vertically they differ, and deliberately: a Slot row is two lines tall, so a
+ * subject sits in the middle of the cell the Block merged, while its times hang
+ * from the top of the row they belong to and a heading sits on the line the
+ * grid starts at.
  */
-const CENTRED = { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } as const;
+const CENTRED = { horizontalAlignment: "CENTER" } as const;
+const HEADING = { ...CENTRED, verticalAlignment: "BOTTOM" } as const;
+const FROM_THE_TOP = { ...CENTRED, verticalAlignment: "TOP" } as const;
+
+/** Grey for the weekday headers, a lighter one for a Break's band. */
+const HEADER_GREY = { red: 217 / 255, green: 217 / 255, blue: 217 / 255 };
+const BREAK_GREY = { red: 239 / 255, green: 239 / 255, blue: 239 / 255 };
 
 const FORMATS: Record<CellRole, Record<string, unknown>> = {
-  class: { ...CENTRED, textFormat: { bold: true, fontSize: 14 } },
-  term: { ...CENTRED, textFormat: { bold: false, fontSize: 11 } },
-  header: { ...CENTRED, textFormat: { bold: true, fontSize: 11 } },
-  time: { ...CENTRED, textFormat: { bold: false, fontSize: 10 } },
+  class: { ...HEADING, textFormat: { bold: true, fontSize: 14 } },
+  term: { ...HEADING, textFormat: { bold: true, italic: true, fontSize: 11 } },
+  // The blank row between the heading and the grid: nothing to align, only a
+  // height, so it is told no more than what it is.
+  spacer: { verticalAlignment: "BOTTOM", textFormat: { bold: true, fontSize: 11 } },
+  header: { ...HEADING, backgroundColor: HEADER_GREY, textFormat: { bold: true, fontSize: 11 } },
+  time: { ...FROM_THE_TOP, textFormat: { bold: true, fontSize: 11 } },
   // A subject is the one thing here that can outgrow its column.
-  subject: { ...CENTRED, wrapStrategy: "WRAP", textFormat: { bold: false, fontSize: 10 } },
+  subject: {
+    ...CENTRED,
+    verticalAlignment: "MIDDLE",
+    wrapStrategy: "WRAP",
+    textFormat: { bold: false, fontSize: 11 },
+  },
+  break: {
+    ...FROM_THE_TOP,
+    backgroundColor: BREAK_GREY,
+    textFormat: { bold: false, italic: true, fontSize: 11 },
+  },
 };
+
+/** A ruled side, which is the only kind of line the grid draws. */
+const RULE = { style: "SOLID", width: 1, color: { red: 0, green: 0, blue: 0 } } as const;
+
+/**
+ * A cell's lines. Left out altogether when it has none, so that a heading row
+ * is told it has no borders rather than told it has four empty ones.
+ */
+function ruling(edges: Edges): Record<string, unknown> {
+  const ruled = Object.entries(edges).filter(([, drawn]) => drawn);
+  return ruled.length === 0
+    ? {}
+    : { borders: Object.fromEntries(ruled.map(([side]) => [side, RULE])) };
+}

@@ -110,18 +110,27 @@ token.json                      # what init was granted — never committed
       { "weekday": "monday", "header": "Понеделник" },
       { "weekday": "tuesday", "header": "Вторник" }
     ],
-    "tab": "{class} — {term}",
-    "weekdayColumnWidth": 150
+    "tab": "{class} - {term}",
+    "title": "{class}",
+    "subtitle": "{term}",
+    "weekdayColumnWidth": 176
   }
 }
 ```
 
 Each weekday names itself as the Intake does and carries the header it is rendered under, so
 which weekdays get a column, in what order and with what capitalisation is the school's choice
-rather than a locale's. `tab` names the one tab `apply` owns, over `{class}` and `{term}`;
-it, `weekdayColumnWidth` and `timezone` may be left out and default to what is shown above. A
-setting the Config has no field for is reported rather than ignored, because a misspelled one
-is otherwise indistinguishable from an unset one.
+rather than a locale's.
+
+`tab`, `title` and `subtitle` are templates over `{class}` and `{term}`: the first names the one
+tab `apply` owns, the other two the two lines the sheet is printed under. They are templates
+rather than the strings themselves because a sheet meant to be handed to a child is titled the
+way a person would say it — `"Седмична програма на {class}"` — while `class` stays the short
+name every Calendar event title carries.
+
+All three, `weekdayColumnWidth` and `timezone` may be left out and default to what is shown
+above. A setting the Config has no field for is reported rather than ignored, because a
+misspelled one is otherwise indistinguishable from an unset one.
 
 The four Intake documents are separate files because they are re-parsed on different cadences:
 the Term and the Non-school days when the ministry publishes its order, the School day and the
@@ -189,9 +198,13 @@ reported together: someone setting a school up for the first time has both to fi
 It writes the weekly grid — times down the left, weekdays across the top, one row per Slot, and
 each Block one vertically merged cell — into exactly one tab, the one `display.tab` names,
 created when it is not there. Every other tab in the spreadsheet is left alone, including one
-orphaned by renaming that template. The layout is regenerated whole on every run, merges and
-formatting and column widths as well as values, and goes out as a single batch, which is what
-the Sheets quota counts.
+orphaned by renaming that template. The layout is regenerated whole on every run — merges,
+ruling, shading, column widths and row heights as well as values — and goes out as a single
+batch, which is what the Sheets quota counts.
+
+A labelled Break gets a row of its own, shaded and captioned, across every weekday no Block is
+spanning it in; an unlabelled one gets none, having nothing to say that the Slot times either
+side of it do not.
 
 ```sh
 school-schedule apply data           # summarises, then asks

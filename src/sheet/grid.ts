@@ -1,15 +1,17 @@
 import { blocksOn, type Block } from "../blocks.js";
-import type { Config } from "../config.js";
-import { slotsOf, type Intake, type Slot, type Weekday } from "../intake/documents.js";
+import { fillIn, type Config } from "../config.js";
+import type { Intake, SchoolDay, Slot, Weekday } from "../intake/documents.js";
 
 /**
  * The weekly grid as a person reads it: times down the left, weekdays across
- * the top, one row per Slot. Nothing here knows about Sheets — this says what
- * the timetable looks like, and `requests.ts` says how Google is told.
+ * the top, one row per Slot and one per labelled Break. Nothing here knows
+ * about Sheets — this says what the timetable looks like, down to which sides
+ * of a cell are ruled, and `requests.ts` says how Google is told.
  *
  * The whole layout is generated rather than filled into a tab a human keeps
  * formatted (ADR-0007), because the rows are a direct function of the School
- * day: a Term with a different number of Slots shifts every row beneath it.
+ * day: a Break that gains a label gains a row, and a Term with a different
+ * number of Slots shifts every row beneath it.
  */
 export interface Grid {
   /** Cells row-major; every row has one cell per column. */
@@ -18,15 +20,39 @@ export interface Grid {
   merges: Rectangle[];
   /** How wide each column is rendered, in pixels. */
   columnWidths: number[];
+  /** How tall each row is rendered. */
+  rowHeights: RowHeight[];
 }
+
+/**
+ * A row's height: a number of pixels, or `fit` for as tall as its own text
+ * needs. The grid pins every row it has an opinion about, and leaves the
+ * heading to `fit` — how tall a line of 14pt Arial stands is Google's business,
+ * not something to hard-code a pixel count for and have drift.
+ */
+export type RowHeight = number | "fit";
 
 export interface Cell {
   text: string;
   role: CellRole;
+  /** Which of the cell's four sides are ruled. */
+  edges: Edges;
 }
 
 /** What a cell is, which is what decides how it is rendered. */
-export type CellRole = "class" | "term" | "header" | "time" | "subject";
+export type CellRole = "class" | "term" | "spacer" | "header" | "time" | "subject" | "break";
+
+/**
+ * The sides of one cell that carry a line. Ruling is described per cell because
+ * that is how a reader sees it — the three time columns are one box with no
+ * lines inside it, and a Break row carries none of its own at all.
+ */
+export interface Edges {
+  top: boolean;
+  right: boolean;
+  bottom: boolean;
+  left: boolean;
+}
 
 /** A rectangle of the grid, in row and column positions counting from 0. */
 export interface Rectangle {
@@ -44,94 +70,223 @@ const TIME_SEPARATOR = "–";
  * belongs to the subjects. Their widths are the pipeline's, not the school's —
  * unlike a weekday column, nothing a school does makes `08:00` wider.
  */
-const TIME_COLUMN_WIDTH = 64;
-const SEPARATOR_COLUMN_WIDTH = 24;
+const TIME_COLUMN_WIDTH = 43;
+const SEPARATOR_COLUMN_WIDTH = 15;
 
 /** The three time columns, then one column per weekday Config lists. */
 const TIME_COLUMNS = 3;
 
-/** The Class, the Term, then the weekday headers, above the first Slot's row. */
-const HEADING_ROWS = 3;
+/** The Class, the Term, a blank row, then the weekday headers. */
+const HEADING_ROWS = 4;
+
+/**
+ * How tall each kind of row below the heading is rendered, in pixels. One line
+ * of text is 21, so a Slot row is two lines tall: a subject long enough to wrap
+ * fits without the row growing and shifting every row beneath it down the
+ * printed page.
+ */
+const LINE_HEIGHT = 21;
+const SLOT_ROW_HEIGHT = 2 * LINE_HEIGHT;
+
+/** The heading is set off from the grid by a blank row rather than by padding. */
+const SPACER_ROW_HEIGHT = 41;
 
 export function gridOf(config: Config, intake: Intake): Grid {
-  const { weekdays } = config.display;
-  const slots = slotsOf(intake.schoolDay);
-  const columns = weekdays.map((column) => columnOf(intake, column.weekday, slots.length));
-  const width = TIME_COLUMNS + weekdays.length;
+  const { display } = config;
+  const rows = bodyRows(intake.schoolDay);
+  const columns = display.weekdays.map((column) => columnOf(intake, column.weekday, rows));
+  const width = TIME_COLUMNS + display.weekdays.length;
 
   return {
     cells: [
-      titleRow(config.display.class, "class", width),
-      titleRow(config.display.term, "term", width),
-      headerRow(weekdays.map((column) => column.header)),
-      ...slots.map((slot, index) => slotRow(slot, columns.map((column) => column.text[index] ?? ""))),
+      titleRow(fillIn(display.title, display), "class", width),
+      titleRow(fillIn(display.subtitle, display), "term", width),
+      blanks("spacer", width, unruled),
+      headerRow(display.weekdays.map((column) => column.header)),
+      ...rows.map((row, index) => bodyRow(row, index, rows.length, columns)),
     ],
     merges: [
-      ...fullWidthRows(HEADING_ROWS - 1, width),
+      ...fullWidthRows(TITLE_ROWS, width),
       ...columns.flatMap((column, index) => column.merges.map(rectangle(TIME_COLUMNS + index))),
+      ...rows.flatMap((row, index) => breakMerges(row, index, columns)),
     ],
     columnWidths: [
       TIME_COLUMN_WIDTH,
       SEPARATOR_COLUMN_WIDTH,
       TIME_COLUMN_WIDTH,
-      ...weekdays.map(() => config.display.weekdayColumnWidth),
+      ...display.weekdays.map(() => display.weekdayColumnWidth),
+    ],
+    rowHeights: [
+      "fit",
+      "fit",
+      SPACER_ROW_HEIGHT,
+      LINE_HEIGHT,
+      ...rows.map((row) => (row.kind === "slot" ? SLOT_ROW_HEIGHT : LINE_HEIGHT)),
     ],
   };
 }
 
+/** The two rows the Class and the Term are written across. */
+const TITLE_ROWS = 2;
+
 /**
- * One weekday's column: what each Slot shows, and which stretches of it are one
- * cell. A Block of two or more Slots is one vertically merged cell, so that it
- * reads as one lesson at a glance, and the subject is written in the cell the
- * merge keeps, which is its first. The Slots no Block covers are empty, and a
- * run of them merges the same way (ADR-0008), so a day that stops early reads
- * as one gap rather than as a column of blank cells.
+ * One row of the grid below the headings: a Slot, or a labelled Break.
+ *
+ * A Break earns a row only when it is labelled, because an unlabelled one has
+ * nothing to say that the Slot times either side of it do not already say. A
+ * labelled one reads as a band across the week — lunch, the long morning break
+ * — and that band is what the row is for.
+ */
+type BodyRow =
+  | { kind: "slot"; slot: Slot; /** Its position among the Slots, counting from 1. */ position: number }
+  | { kind: "break"; label: string };
+
+function bodyRows(schoolDay: SchoolDay): BodyRow[] {
+  const rows: BodyRow[] = [];
+  let position = 0;
+
+  for (const entry of schoolDay.sequence) {
+    if (entry.kind === "slot") {
+      rows.push({ kind: "slot", slot: entry, position: ++position });
+    } else if (entry.label !== undefined && entry.label !== "") {
+      rows.push({ kind: "break", label: entry.label });
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * One weekday's column: what each row shows, which stretches of it are one
+ * cell, and which rows a Block covers.
+ *
+ * A Block of two or more Slots is one vertically merged cell, so that it reads
+ * as one lesson at a glance, and the subject is written in the cell the merge
+ * keeps, which is its first. A Block swallows any Break row it spans (ADR-0008).
+ * The Slots no Block covers are empty, and a run of them merges the same way,
+ * so a day that stops early reads as one gap rather than as a column of blank
+ * cells.
  */
 interface WeekdayColumn {
-  /** What each Slot shows, by position, blank under a merge and where nothing is taught. */
+  /** What each row shows, blank under a merge and where nothing is taught. */
   text: string[];
-  /** The stretches of two or more Slots that are one cell, by Slot position. */
-  merges: { firstSlot: number; lastSlot: number }[];
+  /** The stretches of two or more rows that are one cell, by row position. */
+  merges: Span[];
+  /** Which rows a Block covers; a Break row it does not shows its band. */
+  spanned: boolean[];
 }
 
-function columnOf(intake: Intake, weekday: Weekday, slots: number): WeekdayColumn {
-  const blocks = blocksOn(intake.timetable, weekday);
-  const text = Array.from({ length: slots }, () => "");
-  for (const block of blocks) text[block.firstSlot - 1] = block.subject;
-
-  const merges = [...blocks, ...gapsBetween(blocks, slots)]
-    .filter(spansSeveralSlots)
-    .sort((one, other) => one.firstSlot - other.firstSlot);
-
-  return { text, merges };
+/** A run of rows, counting from the first row below the headings. */
+interface Span {
+  first: number;
+  last: number;
 }
 
-/** The stretches of Slots no Block covers, each of them one empty cell. */
-function gapsBetween(blocks: Block[], slots: number): { firstSlot: number; lastSlot: number }[] {
-  const gaps = [];
-  let slot = 1;
+function columnOf(intake: Intake, weekday: Weekday, rows: BodyRow[]): WeekdayColumn {
+  const rowOfSlot = slotRows(rows);
+  const text = rows.map(() => "");
+  const spanned = rows.map(() => false);
+  const blocks: Span[] = [];
 
-  for (const block of blocks) {
-    if (block.firstSlot > slot) gaps.push({ firstSlot: slot, lastSlot: block.firstSlot - 1 });
-    slot = block.lastSlot + 1;
+  for (const block of blocksOn(intake.timetable, weekday)) {
+    const span = spanOf(block, rowOfSlot);
+    text[span.first] = block.subject;
+    for (let row = span.first; row <= span.last; row++) spanned[row] = true;
+    blocks.push(span);
   }
-  if (slot <= slots) gaps.push({ firstSlot: slot, lastSlot: slots });
 
-  return gaps;
+  const merges = [...blocks, ...gaps(rows, spanned)]
+    .filter(coversSeveralRows)
+    .sort((one, other) => one.first - other.first);
+
+  return { text, merges, spanned };
 }
 
-function spansSeveralSlots(span: { firstSlot: number; lastSlot: number }): boolean {
-  return span.lastSlot > span.firstSlot;
+/** Which row each Slot is on, by its position counting from 1. */
+function slotRows(rows: BodyRow[]): number[] {
+  const at: number[] = [];
+  rows.forEach((row, index) => {
+    if (row.kind === "slot") at[row.position] = index;
+  });
+  return at;
 }
 
-/** Where a column's stretch of Slots sits in the grid. */
+function spanOf(block: Block, rowOfSlot: number[]): Span {
+  return { first: rowOfSlot[block.firstSlot] ?? 0, last: rowOfSlot[block.lastSlot] ?? 0 };
+}
+
+/**
+ * The stretches of Slot rows no Block covers, each of them one empty cell. A
+ * Break row interrupts a stretch rather than joining it: nothing is taught
+ * either side of the Break, so there is no lesson to swallow it, and the band
+ * reads across every column that way.
+ */
+function gaps(rows: BodyRow[], spanned: boolean[]): Span[] {
+  return runsOf(rows.length, (at) => rows[at]?.kind === "slot" && spanned[at] !== true);
+}
+
+/**
+ * The maximal runs of consecutive positions that hold. The empty stretches down
+ * a weekday column and the free stretches across a Break row are the same shape
+ * — a run of cells that reads as one.
+ */
+function runsOf(length: number, holds: (at: number) => boolean): Span[] {
+  const runs: Span[] = [];
+  let running: Span | undefined;
+
+  for (let at = 0; at < length; at++) {
+    if (holds(at)) {
+      running = running === undefined ? { first: at, last: at } : { ...running, last: at };
+      continue;
+    }
+    if (running !== undefined) runs.push(running);
+    running = undefined;
+  }
+
+  if (running !== undefined) runs.push(running);
+  return runs;
+}
+
+function coversSeveralRows(span: Span): boolean {
+  return span.last > span.first;
+}
+
+/** Where a column's stretch of rows sits in the grid. */
 function rectangle(column: number) {
-  return (span: { firstSlot: number; lastSlot: number }): Rectangle => ({
-    firstRow: HEADING_ROWS + span.firstSlot - 1,
-    lastRow: HEADING_ROWS + span.lastSlot - 1,
+  return (span: Span): Rectangle => ({
+    firstRow: HEADING_ROWS + span.first,
+    lastRow: HEADING_ROWS + span.last,
     firstColumn: column,
     lastColumn: column,
   });
+}
+
+/**
+ * A Break row's own merges: each run of weekday columns no Block is spanning
+ * becomes one cell, so that the band reads unbroken rather than as a row of
+ * separate boxes. The label goes in the first such run, which is why the runs
+ * are merged even where they hold nothing.
+ */
+function breakMerges(row: BodyRow, index: number, columns: WeekdayColumn[]): Rectangle[] {
+  if (row.kind !== "break") return [];
+
+  return freeRuns(index, columns)
+    .filter((run) => run.last > run.first)
+    .map((run) => ({
+      firstRow: HEADING_ROWS + index,
+      lastRow: HEADING_ROWS + index,
+      firstColumn: TIME_COLUMNS + run.first,
+      lastColumn: TIME_COLUMNS + run.last,
+    }));
+}
+
+/**
+ * The runs of weekday columns a Break row is free in, left to right. A column a
+ * Block spans is not free: the merged lesson covers the Break row there, which
+ * is what "a Block swallows the Break" means on the page.
+ */
+function freeRuns(index: number, columns: WeekdayColumn[]): Span[] {
+  return runsOf(columns.length, (at) => columns[at]?.spanned[index] !== true);
 }
 
 /** A title row: the text in the first cell, the rest blank under the merge. */
@@ -139,32 +294,95 @@ function titleRow(text: string, role: CellRole, width: number): Cell[] {
   return Array.from({ length: width }, (_, column) => ({
     text: column === 0 ? text : "",
     role,
+    edges: unruled(),
   }));
 }
 
 function headerRow(headers: string[]): Cell[] {
   return [
-    ...blanks("header", TIME_COLUMNS),
-    ...headers.map((text) => ({ text, role: "header" as const })),
+    ...timeCells("header", ["", "", ""]),
+    ...headers.map((text) => ({ text, role: "header" as const, edges: boxed() })),
   ];
 }
 
 /**
- * A Slot's row: when it starts, a separator, when it ends, and then what each
- * weekday shows in it. Every Slot gets a row even when no weekday has a Lesson
- * in it, so the sheet says how far the school day extends.
+ * One row below the headings, whichever kind it is. A Slot's row says when it
+ * starts, a separator, when it ends, and then what each weekday shows in it;
+ * every Slot gets a row even when no weekday has a Lesson in it, so the sheet
+ * says how far the school day extends.
  */
+function bodyRow(row: BodyRow, index: number, rows: number, columns: WeekdayColumn[]): Cell[] {
+  return row.kind === "slot"
+    ? slotRow(row.slot, columns.map((column) => column.text[index] ?? ""))
+    : breakRow(row, index, rows, columns);
+}
+
 function slotRow(slot: Slot, weekdays: string[]): Cell[] {
   return [
-    { text: slot.start, role: "time" },
-    { text: TIME_SEPARATOR, role: "time" },
-    { text: slot.end, role: "time" },
-    ...weekdays.map((text) => ({ text, role: "subject" as const })),
+    ...timeCells("time", [slot.start, TIME_SEPARATOR, slot.end]),
+    ...weekdays.map((text) => ({ text, role: "subject" as const, edges: boxed() })),
   ];
 }
 
-function blanks(role: CellRole, howMany: number): Cell[] {
-  return Array.from({ length: howMany }, () => ({ text: "", role }));
+/**
+ * A labelled Break's row: a band with the label in it, and no times, because
+ * the Slots above and below it already say when it runs. Where every weekday is
+ * spanned by a Block the label has nowhere to go and is not rendered at all,
+ * which follows from rendering the band per column (ADR-0008).
+ */
+function breakRow(
+  row: { label: string },
+  index: number,
+  rows: number,
+  columns: WeekdayColumn[],
+): Cell[] {
+  const last = columns.length - 1;
+  const labelled = freeRuns(index, columns)[0]?.first;
+  // The band carries no lines of its own — only whatever part of the table's
+  // own frame it happens to sit on, which is its left and right edge, and its
+  // bottom when no Slot row follows to draw one.
+  const frame = (side: Partial<Edges>): Edges => ({
+    ...unruled(),
+    ...side,
+    bottom: index === rows - 1,
+  });
+
+  return [
+    { text: "", role: "break", edges: frame({ left: true }) },
+    { text: "", role: "break", edges: frame({}) },
+    { text: "", role: "break", edges: frame({}) },
+    ...columns.map((_, at) => ({
+      text: at === labelled ? row.label : "",
+      role: "break" as const,
+      edges: frame(at === last ? { right: true } : {}),
+    })),
+  ];
+}
+
+/**
+ * The three time columns of one row. They are ruled as a single box with no
+ * lines between them, so that `08:00 – 08:40` reads as one time rather than as
+ * three cells that happen to be adjacent.
+ */
+function timeCells(role: CellRole, texts: [string, string, string]): Cell[] {
+  const [start, separator, end] = texts;
+  return [
+    { text: start, role, edges: { ...boxed(), right: false } },
+    { text: separator, role, edges: { top: true, right: false, bottom: true, left: false } },
+    { text: end, role, edges: { ...boxed(), left: false } },
+  ];
+}
+
+function blanks(role: CellRole, howMany: number, edges: () => Edges): Cell[] {
+  return Array.from({ length: howMany }, () => ({ text: "", role, edges: edges() }));
+}
+
+function boxed(): Edges {
+  return { top: true, right: true, bottom: true, left: true };
+}
+
+function unruled(): Edges {
+  return { top: false, right: false, bottom: false, left: false };
 }
 
 function fullWidthRows(through: number, width: number): Rectangle[] {

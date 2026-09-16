@@ -24,6 +24,14 @@ export interface RenderedTab {
   merges: string[];
   /** Column widths in pixels, by column, where the run set one. */
   columnWidths: (number | undefined)[];
+  /**
+   * Row heights by row: a number where the run pinned one, `"fit"` where it
+   * handed the row to Sheets to size, and `undefined` where it said nothing.
+   * How tall Sheets makes a `"fit"` row depends on font metrics this renderer
+   * has no business guessing at, so it records the instruction rather than a
+   * height it would have to invent.
+   */
+  rowHeights: (number | "fit" | undefined)[];
   /** True where the run wrote anything at all to the tab. */
   written: boolean;
 }
@@ -70,6 +78,7 @@ interface MutableTab {
   formats: Map<string, Record<string, unknown>>;
   merges: GridRange[];
   columnWidths: (number | undefined)[];
+  rowHeights: (number | "fit" | undefined)[];
 }
 
 /** How one cell is drawn, named the way a person reads a spreadsheet: `A1`. */
@@ -105,6 +114,7 @@ function blankTab(title: string, sheetId: number, created: boolean): MutableTab 
     formats: new Map(),
     merges: [],
     columnWidths: [],
+    rowHeights: [],
   };
 }
 
@@ -124,6 +134,8 @@ function apply(request: SheetsRequest, tabs: Map<number, MutableTab>): void {
       return unmergeCells(body, tabs);
     case "updateDimensionProperties":
       return updateDimensionProperties(body, tabs);
+    case "autoResizeDimensions":
+      return autoResizeDimensions(body, tabs);
     default:
       throw new Error(
         `this test renderer does not understand the Sheets request "${kind}": ${JSON.stringify(request)}`,
@@ -232,15 +244,39 @@ function updateDimensionProperties(
   const range = object(body["range"], "updateDimensionProperties.range");
   const tab = target(number(range["sheetId"], "updateDimensionProperties.sheetId"), tabs);
   const dimension = string(range["dimension"], "updateDimensionProperties.dimension");
-  if (dimension !== "COLUMNS") return;
+  if (dimension !== "COLUMNS" && dimension !== "ROWS") return;
 
-  const width = number(
+  const pixels = number(
     object(body["properties"], "updateDimensionProperties.properties")["pixelSize"],
     "properties.pixelSize",
   );
+  const along = dimension === "COLUMNS" ? tab.columnWidths : tab.rowHeights;
   const from = number(range["startIndex"] ?? 0, "range.startIndex");
-  const to = number(range["endIndex"] ?? tab.columnCount, "range.endIndex");
-  for (let column = from; column < to; column++) tab.columnWidths[column] = width;
+  const to = number(
+    range["endIndex"] ?? (dimension === "COLUMNS" ? tab.columnCount : tab.rowCount),
+    "range.endIndex",
+  );
+  for (let at = from; at < to; at++) along[at] = pixels;
+  tab.written = true;
+}
+
+/**
+ * A row handed to Sheets to size. Recorded as the instruction it is: a run that
+ * pinned the row on a previous pass and auto-resizes it on this one has undone
+ * that pinning, which is the whole reason the request is sent.
+ */
+function autoResizeDimensions(
+  body: Record<string, unknown>,
+  tabs: Map<number, MutableTab>,
+): void {
+  const range = object(body["dimensions"], "autoResizeDimensions.dimensions");
+  const tab = target(number(range["sheetId"], "autoResizeDimensions.sheetId"), tabs);
+  const dimension = string(range["dimension"], "autoResizeDimensions.dimension");
+  if (dimension !== "ROWS") return;
+
+  const from = number(range["startIndex"] ?? 0, "dimensions.startIndex");
+  const to = number(range["endIndex"] ?? tab.rowCount, "dimensions.endIndex");
+  for (let row = from; row < to; row++) tab.rowHeights[row] = "fit";
   tab.written = true;
 }
 
@@ -262,6 +298,7 @@ function rendered(tab: MutableTab): RenderedTab {
     formats,
     merges: tab.merges.map((range) => rangeName(range, tab)),
     columnWidths: [...tab.columnWidths],
+    rowHeights: [...tab.rowHeights],
   };
 }
 

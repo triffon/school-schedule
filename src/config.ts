@@ -36,6 +36,17 @@ export interface Display {
   weekdays: WeekdayColumn[];
   /** The name of the tab the pipeline owns, over `{class}` and `{term}`. */
   tab: string;
+  /**
+   * The heading the sheet is printed under, and the line beneath it, over the
+   * same `{class}` and `{term}`.
+   *
+   * They are templates rather than the Class and the Term themselves, because a
+   * sheet meant to be handed to a child is titled the way a person would say it
+   * — "Седмична програма на Анди" — while the Class stays the short name the
+   * Calendar puts in every event title.
+   */
+  title: string;
+  subtitle: string;
   /** How wide a weekday column is rendered, in pixels. */
   weekdayColumnWidth: number;
 }
@@ -61,8 +72,10 @@ const CONFIG_DOCUMENT: JsonFile = {
  * a school must say for itself — which spreadsheet, which Class — has none.
  */
 const DEFAULT_TIMEZONE = "Europe/Sofia";
-const DEFAULT_TAB = "{class} — {term}";
-const DEFAULT_WEEKDAY_COLUMN_WIDTH = 150;
+const DEFAULT_TAB = "{class} - {term}";
+const DEFAULT_TITLE = "{class}";
+const DEFAULT_SUBTITLE = "{term}";
+const DEFAULT_WEEKDAY_COLUMN_WIDTH = 176;
 
 export type ConfigReading = { ok: true; config: Config } | { ok: false; problems: Problem[] };
 
@@ -95,6 +108,8 @@ export async function readConfig(dataRepository: string): Promise<ConfigReading>
       term: required(display?.["term"], "display.term", problems),
       weekdays: weekdayColumns(display?.["weekdays"], problems),
       tab: stringOr(display?.["tab"], "display.tab", DEFAULT_TAB, problems),
+      title: stringOr(display?.["title"], "display.title", DEFAULT_TITLE, problems),
+      subtitle: stringOr(display?.["subtitle"], "display.subtitle", DEFAULT_SUBTITLE, problems),
       weekdayColumnWidth: numberOr(
         display?.["weekdayColumnWidth"],
         "display.weekdayColumnWidth",
@@ -108,16 +123,25 @@ export async function readConfig(dataRepository: string): Promise<ConfigReading>
   unexpected(
     display,
     "display",
-    ["class", "term", "weekdays", "tab", "weekdayColumnWidth"],
+    ["class", "term", "weekdays", "tab", "title", "subtitle", "weekdayColumnWidth"],
     problems,
   );
 
   return problems.length > 0 ? { ok: false, problems } : { ok: true, config };
 }
 
+/**
+ * One of Config's display templates, with the Class and the Term filled into
+ * it. The same two placeholders in every template, so that an operator who has
+ * learned one has learned all of them.
+ */
+export function fillIn(template: string, display: Display): string {
+  return template.replaceAll("{class}", display.class).replaceAll("{term}", display.term);
+}
+
 /** The tab the pipeline owns, with the Class and the Term filled into it. */
 export function tabName(display: Display): string {
-  return display.tab.replaceAll("{class}", display.class).replaceAll("{term}", display.term);
+  return fillIn(display.tab, display);
 }
 
 function problem(at: string, message: string): Problem {
