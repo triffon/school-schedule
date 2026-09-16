@@ -69,6 +69,9 @@ function eventOf(
     // Said rather than left unsaid: the account's default alert would notify
     // the student before every lesson, dozens of times a week.
     reminders: { useDefault: false },
+    // A lesson is not the student's own commitment, so it should not read as
+    // one blocking their time on the calendar it's published to.
+    transparency: "transparent",
     extendedProperties: { private: correlationOf(block, term) },
   };
 }

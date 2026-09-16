@@ -64,6 +64,8 @@ export interface CalendarEventInput {
   recurrence?: string[];
   /** Set explicitly, so a lesson never inherits the account's default alerts. */
   reminders?: { useDefault: boolean };
+  /** Whether the event blocks time on the calendar it's published to. */
+  transparency?: "opaque" | "transparent";
   extendedProperties?: { private?: Record<string, string> };
 }
 

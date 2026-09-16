@@ -257,6 +257,16 @@ describe("what an event says and carries", () => {
     }
   });
 
+  test("every event is free rather than busy", async () => {
+    const run = await publish();
+
+    // A lesson is not the student's own commitment, so it should not read as
+    // one blocking their time on the calendar it's published to.
+    for (const event of published(run)) {
+      expect(event.transparency).toBe("transparent");
+    }
+  });
+
   test("each one names its Block and its Term, for a later run to correlate on", async () => {
     const run = await publish();
 
