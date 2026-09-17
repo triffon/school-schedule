@@ -22,8 +22,12 @@ _Avoid_: Gap, interval, recess
 The date range over which the Timetable is in force.
 _Avoid_: Semester, school year
 
+**School year**:
+The whole of a school's year, which its Terms divide and which its Non-school days are shared across. Never used to mean a Term.
+_Avoid_: Academic year, year
+
 **Non-school day**:
-A date inside the Term on which no Lesson is taught. Declared as a labelled date range rather than as individual dates.
+A date in the School year on which no Lesson is taught, shared by every Term rather than owned by one. Declared as a labelled date range rather than as individual dates, and identified by that label and the calendar year the range begins in.
 _Avoid_: Holiday, vacation, day off
 
 ### The pattern and its instances
